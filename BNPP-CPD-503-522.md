@@ -33,7 +33,7 @@ Upgrade flow and steps
 4. Upgrade shared cluster components (ibm-cert-manager,ibm-licensing,scheduler)
 5. Prepare to upgrade an instance of IBM Software Hub
 6. Upgrade an instance of IBM Software Hub
-7. Upgrade CPD services (db2oltp,datagate)
+7. Upgrade CPD services (db2oltp,datagate,dmc)
 8. Potential Issues
 9. Validate CPD upgrade (customer acceptance test)
 ```
@@ -53,7 +53,7 @@ Test internet connection, and make sure the output from the target URL and it ca
 curl -v https://github.com/IBM
 ```
 
-Prepare customer\'s IBM entitlement key
+Prepare IBM entitlement key
 
 Log in to <https://myibm.ibm.com/products-services/containerlibrary> with the IBMid and password that are associated with the entitled software.
 
@@ -565,44 +565,6 @@ cpd-cli service-instance list \
 --profile=${CPD_PROFILE_NAME} \
 --service-type=db2oltp
 ```
-
-After upgrading Db2, you need to update the configmap
-
-Run the following commands to patch the instance.json configmap
-
-Run the following command to retrieve the values for the variables, CM_NAME, NAMESPACE and NEW_VERSION:
-
-```
-cpd-cli service-instance list --profile=${CPD_PROFILE_NAME} --service-type=db2oltp
-```
-
-CM_NAME: Db2u instance configmap name. CM_NAME is obtained like this: <service_type>-<instance_id>-<service_type>-cm
-
-For example:
-
-```
-db2oltp-1689782702423826-db2oltp-cm
-```
-
-NAMESPACE: Cluster namespace where Db2 instance and the configmap are installed
-
-For example:
-
-```
-cpd-instance
-```
-
-NEW_VERSION: Upgraded Db2 instance version
-
-For example:
-
-```
-11.5.9.0-cn5-amd64
-```
-
-[Copy the bash script](https://www.ibm.com/docs/en/software-hub/5.2.x?topic=u-upgrading-from-version-51-36) to your local workstation and update the permissions of the bash script using chmod
-
-Update the values for the CM_NAME, NAMESPACE, and NEW_VERSION variables in the bash script and run the bash script.
 
 Continue with the upgrade of Data Gate custom resource
 
