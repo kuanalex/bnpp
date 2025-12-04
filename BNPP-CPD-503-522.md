@@ -172,13 +172,13 @@ podman login cp.icr.io -u cp -p ${IBM_ENTITLEMENT_KEY}
 Download and unpack the latest cpd-cli release
 
 ```
-wget https://github.com/IBM/cpd-cli/releases/download/v14.2.2/cpd-cli-linux-EE-14.2.2.tgz && gzip -d cpd-cli-linux-EE-14.2.2.tgz && tar -xvf cpd-cli-linux-EE-14.2.2.tar && rm -rf cpd-cli-linux-EE-14.2.2.tar
+wget https://github.com/IBM/cpd-cli/releases/download/v14.2.2/cpd-cli-linux-SE-14.2.2.tgz && gzip -d cpd-cli-linux-SE-14.2.2.tgz && tar -xvf cpd-cli-linux-SE-14.2.2.tar && rm -rf cpd-cli-linux-SE-14.2.2.tar
 ```
 
 Add the cpd-cli to your PATH variable, for example
 
 ```
-export PATH=/root/cpd-cli-linux-EE-14.2.2-2727:$PATH
+export PATH=/root/cpd-cli-linux-SE-14.2.2-2727:$PATH
 ```
 
 Update your environment variables script
