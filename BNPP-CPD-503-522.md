@@ -322,6 +322,167 @@ cpd-cli manage apply-entitlement \
 
 ## 6. Upgrade an instance of IBM Software Hub
 
+Before you upgrade to IBM Software Hub, check whether the following common core services pods are running in this instance of IBM Cloud Pak for Data:
+
+Check whether the global search pods are running:
+
+```
+oc get pods --namespace=${PROJECT_CPD_INST_OPERANDS} | grep elasticsea-0ac3
+```
+
+If the command returns an empty response, proceed to the next step.
+
+If the command returns a list of pods, review [Upgrades fail when global search is configured incorrectly](https://www.ibm.com/docs/en/software-hub/5.2.x?topic=tiu-upgrades-fail-when-global-search-is-configured-incorrectly) to determine whether you have any configurations that could cause issues during upgrade.
+
+Check whether the catalog-api pods are running:
+
+```
+oc get pods --namespace=${PROJECT_CPD_INST_OPERANDS} | grep catalog-api
+```
+
+If the command returns an empty response, you are ready to upgrade IBM Software Hub.
+
+If the command returns a list of pods, review the following guidance to determine how long the catalog-api service will be down during upgrade.
+
+When you upgrade the common core services to IBM Software Hub Version 5.2, the underlying storage for the catalog-api service is migrated to PostgreSQL.
+
+During the final stages of the migration, the catalog-api service is offline, and services that are dependent on the service are not available. The duration of the migration depends on the number of assets and relationships that are stored in the instance. The duration of the outage depends on the number of databases (projects, catalogs, and spaces) in the instance. In a typical upgrade scenario, the outage should be significantly shorter than the overall migration.
+
+To determine how many databases will be migrated follow these steps:
+
+Set the INSTANCE_URL environment variable to the URL of IBM Software Hub
+
+```
+export INSTANCE_URL=<URL>
+```
+
+To get the URL of the web client, run the following command:
+
+```
+cpd-cli manage get-cpd-instance-details \
+--cpd_instance_ns=${PROJECT_CPD_INST_OPERANDS}
+```
+
+Get the credentials for the wdp-service:
+
+```
+TOKEN=$(oc get -n ${PROJECT_CPD_INST_OPERANDS} secrets wdp-service-id -o yaml | grep service-id-credentials | cut -d':' -f2- | sed -e 's/ //g' | base64 -d)
+```
+
+Get the number of catalogs in the instance:
+
+```
+curl -sk -X GET "https://${INSTANCE_URL}/v2/catalogs?limit=10001&skip=0&include=catalogs&bss_account_id=999" -H 'accept: application/json' -H "Authorization: Basic ${TOKEN}" | jq -r '.catalogs | length'
+```
+
+Get the number of projects in the instance:
+
+```curl -sk -X GET "https://${INSTANCE_URL}/v2/catalogs?limit=10001&skip=0&include=projects&bss_account_id=999" -H 'accept: application/json' -H "Authorization: Basic ${TOKEN}" | jq -r '.catalogs | length'
+```
+
+Get the number of spaces in the instance:
+
+```
+curl -sk -X GET "https://${INSTANCE_URL}/v2/catalogs?limit=10001&skip=0&include=spaces&bss_account_id=999" -H 'accept: application/json' -H "Authorization: Basic ${TOKEN}" | jq -r '.catalogs | length'
+```
+
+Add up the number of catalogs, projects, and spaces returned by the previous commands. Then, use the following table to determine approximately how long the service will be offline during the migration:
+
+```
+Databases                   Downtime for migration (approximate)
+Up to 1,000 databases	    6 minutes
+1,001 - 10,000 databases	20 minutes
+10,001 - 70,000 databases	60 minutes
+```
+
+Save the following script on the client workstation as a file named precheck_migration.sh:
+
+```
+#!/bin/bash
+
+# Default ranges for couchdb size
+SMALL=30
+LARGE=200
+
+echo "Performing pre-migration checks"
+
+check_resources(){
+        scale_config=$1
+        pvc_size=$(oc get pvc -n ${PROJECT_CPD_INST_OPERANDS} database-storage-wdp-couchdb-0 --no-headers | awk '{print $4}')
+        size=$(awk '{print substr($0, 1, length($0)-2)}' <<< "$pvc_size")
+
+        if [[ "$size" -le "$SMALL" ]];then
+          echo "The system is ready for migration. Upgrade your cluster as usual."
+        elif [ "$size" -ge "$SMALL" ] && [ "$size" -le "$LARGE" ] && [[ $scale_config == "small" ]];then
+          echo -e "Run the following command to increase the CPU and memory:\n"
+          cat << EOF
+oc patch ccs ccs-cr -n ${PROJECT_CPD_INST_OPERANDS} --type merge --patch '{"spec": {
+  "catalog_api_postgres_migration_threads": 6,
+  "catalog_api_migration_job_resources": { 
+    "requests": {"cpu": "3", "ephemeral-storage": "10Mi", "memory": "4Gi"},
+    "limits": {"cpu": "8", "ephemeral-storage": "4Gi", "memory": "8Gi"}}
+}}'
+EOF
+          echo
+          echo "The system is ready for migration. Upgrade your cluster as usual."
+        elif [[ $scale_config == "medium" ]];then
+          echo -e "Run the following command to increase the CPU and memory:\n"
+          cat << EOF
+oc patch ccs ccs-cr -n ${PROJECT_CPD_INST_OPERANDS} --type merge --patch '{"spec": {
+  "catalog_api_postgres_migration_threads": 8,
+  "catalog_api_migration_job_resources": { 
+    "requests": {"cpu": "6", "ephemeral-storage": "10Mi", "memory": "6Gi"},
+    "limits": {"cpu": "10", "ephemeral-storage": "6Gi", "memory": "10Gi"}}
+}}'
+EOF
+          echo
+          echo "Before you can start the upgrade, you must prepare the system for migration."
+        fi
+}
+
+check_upgrade_case(){     
+        scale_config=$(oc get ccs -n ${PROJECT_CPD_INST_OPERANDS} ccs-cr -o json | jq -r '.spec.scaleConfig')
+
+        # Default case, scale config is set to small
+        if [[ -z "${scale_config}" ]];then
+          scale_config=small
+        fi
+
+        if [[ $scale_config == "large" ]];then
+          echo "Before you can start the upgrade, you must prepare the system for migration."
+        elif [[ $scale_config == "small" ]] || [[ $scale_config == "medium" ]];then
+          check_resources $scale_config
+        fi
+}
+
+check_upgrade_case
+```
+
+Run the precheck_migration.sh to determine whether you can run an automatic migration of the common core services or whether you need to configure common core services to run a semi-automatic migration:
+
+```
+./precheck_migration.sh
+```
+
+Take the appropriate action based on the message returned by the script:
+
+Option 1 - "The system is ready for migration" -> Upgrade your cluster as usual
+
+Option 2 - "Run the following command to increase the CPU and memory" -> Run the patch command returned by the script, upgrade IBM Software Hub
+
+Option 3 - "The script returns both of the following messages: Run the following command to increase the CPU and memory AND Before you can start the upgrade, you must prepare the system for migration." -> Run the patch command returned by the script, then run the following command to enable semi-automatic migration:
+
+```
+oc patch ccs ccs-cr \
+-n ${PROJECT_CPD_INST_OPERANDS} \
+--type merge \
+--patch '{"spec": {"use_semi_auto_catalog_api_migration": true}}'
+```
+
+Proceed with the upgrade of IBM Software Hub
+
+***Important: After you upgrade the services in your environment, ensure that you complete Completing the [catalog-api service migration](https://www.ibm.com/docs/en/software-hub/5.2.x?topic=services-completing-catalog-api-migration)***
+
 Upgrade the required operators and custom resources for the instance:
 
 Log the cpd-cli in to the Red Hat® OpenShift® Container Platform cluster
@@ -386,18 +547,7 @@ Proceed with upgrading the services next
 
 ## 7. Upgrade CPD services (db2oltp,datagate,dmc)
 
-From the BNPP runbook, all CPD services are upgraded at the same time:
-
-```
-cpd-cli manage apply-cr \
---release=${VERSION} \
---cpd_instance_ns=${PROJECT_CPD_INST_OPERANDS} \
---components=${COMPONENTS} \
---license_acceptance=true \
---upgrade=true
-```
-
-In order to have more visibility into each service upgrade, you can optionally upgrade the services in sequential order, as follows:
+In order to have more visibility into each service upgrade, it is recommended to upgrade the services in sequential order, as follows:
 
 ### Upgrade Db2 custom resource (est. 10 minutes)
 
@@ -417,7 +567,8 @@ cpd-cli manage apply-cr \
 --release=${VERSION} \
 --cpd_instance_ns=${PROJECT_CPD_INST_OPERANDS} \
 --license_acceptance=true \
---upgrade=true
+--upgrade=true \
+--case_download=false
 ```
 
 If you want to confirm that the custom resource status is Completed, you can run the cpd-cli manage get-cr-status command:
@@ -568,9 +719,57 @@ cpd-cli service-instance list \
 
 Continue with the upgrade of Data Gate custom resource
 
-### Update Data Gate custom resource (est. 10 minutes):
+### Upgrade the Data Gate custom resource (est. 10 minutes):
 
-Update the custom resource for Data Gate:
+Complete the following tasks before you run the actual Data Gate upgrade:
+
+1. [Activating the Db2 Connect Unlimited Edition license](https://www.ibm.com/docs/en/software-hub/5.2.x?topic=upgrade-activating-db2-connect-unlimited)
+
+As a prerequisite for all upgrades, the license for your JDBC driver must be activated
+
+
+2. [Cleaning up the data-gate-api container](https://www.ibm.com/docs/en/software-hub/5.2.x?topic=upgrade-cleaning-up-data-gate-api)
+
+Open a shell in the data-gate-api container of the Data Gate pod:
+
+```
+oc exec -it -c data-gate-api ${DG_POD_ID} -- bash
+```
+
+Determine the ID of the Data Gate instance you want to upgrade by running the oc get dginstance command, as in this example:
+
+```
+oc get dginstance -n ${PROJECT_CPD_INST_OPERANDS}
+```
+
+For example:
+
+```
+NAME                 VERSION   BUILD      STATUS      RECONCILED   AGE
+dg1699914520773847   5.0.0     5.0.0.82   Completed   5.0.0        6h58m
+
+The instance ID in this example is this example is dg1699914520773847
+```
+
+Determine the ID of the Data Gate instance's server pod by running the following command:
+
+```
+DG_POD_ID=$(oc get pod -l icpdsupport/app=dg-instance-server,\
+icpdsupport/serviceInstanceId=`echo ${DG_INSTANCE_ID} | 
+sed 's/^dg//'` -o jsonpath='{.items[0].metadata.name}')
+```
+
+DG_INSTANCE_ID is the instance ID you identified in step 1
+
+Run the following command:
+
+```
+rm -rf /head/clone-api/work/jetty-0_0_0_0-8188-clone-api_war-_clone_system-any-/webapp/* 2> /dev/null
+```
+
+Exit the container shell and proceed with the upgrade
+
+Upgrade the custom resource for Data Gate:
 
 ```
 cpd-cli manage apply-cr \
@@ -580,7 +779,8 @@ cpd-cli manage apply-cr \
 --block_storage_class=${STG_CLASS_BLOCK} \
 --file_storage_class=${STG_CLASS_FILE} \
 --license_acceptance=true \
---upgrade=true
+--upgrade=true \
+--case_download=false
 ```
 
 Validating the upgrade: Data Gate is upgraded when the apply-cr command returns:
@@ -642,7 +842,7 @@ Keep track of your Db2 configuration settings prior to upgrading to ensure you h
 
 You can also [change configuration settings](https://www.ibm.com/docs/en/software-hub/5.2.x?topic=configuration-changing-db2-settings) after you deploy your instance
 
-### Update Db2 Data Management Console custom resource (est. 10 minutes):
+### Upgrade the Db2 Data Management Console custom resource (est. 10 minutes):
 
 Log the cpd-cli in to the Red Hat® OpenShift® Container Platform cluster:
 
@@ -658,7 +858,8 @@ cpd-cli manage apply-cr \
 --release=${VERSION} \
 --cpd_instance_ns=${PROJECT_CPD_INST_OPERANDS} \
 --license_acceptance=true \
---upgrade=true
+--upgrade=true \
+--case_download=false
 ```
 
 If you want to confirm that the custom resource status is Completed, you can run the cpd-cli manage get-cr-status command:
@@ -680,6 +881,434 @@ DMC is upgraded when the apply-cr command returns:
 ```
 [SUCCESS]... The apply-cr command ran successfully
 ```
+
+### Complete the catalog-api service migration:
+
+After you upgrade the common core services to IBM® Software Hub Version 5.2, the back-end database for the catalog-api service is migrated from CouchDB to PostgreSQL
+
+1. Checking the migration method used
+
+If you ran an automatic migration, the common core services waits for the migration jobs to complete before upgrading the components associated with the common core services
+
+If you ran a semi-automatic migration, the common core services runs the migration jobs while upgrading the components associated with the common core services
+
+Run the following command to determine which migration method was used:
+
+```
+oc describe ccs ccs-cr \
+--namespace ${PROJECT_CPD_INST_OPERANDS} \
+| grep use_semi_auto_catalog_api_migration
+```
+
+Take the appropriate action based on the response returned by the oc describe command:
+
+The command returns an empty response:
+```
+Automatic -> Proceed to 4. Collecting statistics about the migration
+```
+
+The command returns true:
+```
+Semi-automatic	-> Proceed to 2. Checking the status of the migration jobs.
+```
+
+
+2. Checking the status of the migration jobs
+
+This step is required only for semi-automatic migrations. If you completed an automatic migration, proceed to 4. Collecting statistics about the migration
+
+Check the migration status periodically. The following jobs might take some time to complete depending on number of assets to be migrated:
+-cams-postgres-migration-job
+-jobs-postgres-upgrade-migration
+
+To check the status of the jobs:
+
+```
+oc get job cams-postgres-migration-job jobs-postgres-upgrade-migration \
+--namespace ${PROJECT_CPD_INST_OPERANDS} \
+-o custom-columns=NAME:.metadata.name,STATUS:.status.conditions[0].type,COMPLETIONS:.status.succeeded
+```
+
+The command returns output with the following format:
+
+```
+NAME                             STATUS    COMPLETIONS
+cams-postgres-migration-job      Complete   1/1       
+jobs-postgres-upgrade-migration  Complete   1/1      
+```
+
+Take the appropriate action based on the status of the jobs:
+
+Option 1 - The status of either job is Failed -> Contact IBM Support for assistance resolving the error
+
+Option 2 - The status of either job is InProgress -> Wait several minutes before checking the status of the jobs again
+
+Option 3 - The status of both jobs is Complete -> Proceed to 3. Completing the migration
+
+
+3. Completing the migration
+
+This step is required only for semi-automatic migrations. If you completed an automatic migration, proceed to 4. Collecting statistics about the migration.
+
+After both of the following jobs complete, you can complete the migration to PostgreSQL:
+-cams-postgres-migration-job
+-jobs-postgres-upgrade-migration
+
+To complete the migration to PostgreSQL:
+
+Run the following command to continue the semi-automatic migration:
+
+```
+oc patch ccs ccs-cr \
+--namespace ${PROJECT_CPD_INST_OPERANDS} \
+--type merge \
+--patch '{"spec": {"continue_semi_auto_catalog_api_migration": true}}'
+```
+
+Wait for common core services custom resource to be Completed. This process takes at least 10 minutes. However, it might be significantly longer if any assets were changed during the common core services upgrade.
+
+To check the status of the custom resource, run:
+
+```
+oc get ccs ccs-cr \
+--namespace ${PROJECT_CPD_INST_OPERANDS}
+```
+
+The command returns output with the following format:
+
+```
+NAME     VERSION   RECONCILED   STATUS      PERCENT   AGE
+ccs-cr   11.0.0    11.0.0       Completed   100%      1d
+```
+
+Take the appropriate action based on the status of the jobs:
+
+Option 1 - The status of either job is Failed -> Contact IBM Support for assistance resolving the error
+
+Option 2 - The status of either job is InProgress -> WWait several minutes before checking the status of the custom resource again
+
+Option 3 - The status of both jobs is Complete -> 	Proceed to 4. Collecting statistics about the migration
+
+
+4. Collecting statistics about the migration
+
+Save the following script on the client workstation as a file named migration_status.sh:
+
+```
+#!/bin/bash
+
+# Set postgres connection parameters
+postgres_password=$(oc get secret -n ${PROJECT_CPD_INST_OPERANDS} ccs-cams-postgres-app -o json 2>/dev/null | jq -r '.data."password"' | base64 -d)
+postgres_username=cams_user
+postgres_db=camsdb
+postgres_migrationdb=camsdb_migration
+
+echo -e "======MIGRATION STATUS==========="
+
+# Total migrated database(s)
+databases=$(oc -n ${PROJECT_CPD_INST_OPERANDS} -c postgres exec ccs-cams-postgres-1 -- psql -t postgresql://$postgres_username:$postgres_password@localhost:5432/$postgres_migrationdb -c "select count(*) from migration.status where state='complete'" 2>/dev/null)
+if [ -n "$databases" ];then
+  databases_no_space=$(echo "$databases" | tr -d ' ')
+  echo "Total catalog-api databases migrated: $databases_no_space"
+else
+  echo "Unable to fetch migration information for databases"
+fi
+
+# Total migrated assets
+assets=$(oc -n ${PROJECT_CPD_INST_OPERANDS} -c postgres exec ccs-cams-postgres-1 -- psql -t postgresql://$postgres_username:$postgres_password@localhost:5432/$postgres_db -c "select count(*) from cams.asset" 2>/dev/null)
+if [ -n "$assets" ];then
+  assets_no_space=$(echo "$assets" | tr -d ' ')
+  echo -e "Total catalog-api assets migrated: $assets_no_space\n"
+else
+  echo "Unable to fetch migration information for assets"
+fi
+```
+
+Run the migration_status.sh script:
+
+```
+./migration_status.sh
+```
+
+Proceed to step 5. Backing up the PostgreSQL database
+
+
+5. Backing up the PostgreSQL database
+
+Back up the new PostgreSQL database
+
+Save the following script on the client workstation as a file named backup_postgres.sh:
+
+```
+#!/bin/bash
+
+# Make sure PROJECT_CPD_INST_OPERANDS is set
+if [ -z "$PROJECT_CPD_INST_OPERANDS" ]; then
+  echo "Environment variable PROJECT_CPD_INST_OPERANDS is not defined. This environment variable must be set to the project where IBM Software Hub is running."
+  exit 1
+fi
+
+echo "PROJECT_CPD_INST_OPERANDS namespace is: $PROJECT_CPD_INST_OPERANDS"
+
+# Step 1: Find the replica pod
+REPLICA_POD=$(oc get pods -n $PROJECT_CPD_INST_OPERANDS -l app=ccs-cams-postgres -o jsonpath='{range .items[?(@.metadata.labels.role=="replica")]}{.metadata.name}{"\n"}{end}')
+
+if [ -z "$REPLICA_POD" ]; then
+  echo "No replica pod found."
+  exit 1
+fi
+
+echo "Replica pod: $REPLICA_POD"
+
+# Step 2: Extract JDBC URI from a secret
+JDBC_URI=$(oc get secret ccs-cams-postgres-app -n $PROJECT_CPD_INST_OPERANDS -o jsonpath="{.data.uri}" | base64 -d)
+
+if [ -z "$JDBC_URI" ]; then
+  echo "JDBC URI not found in secret."
+  exit 1
+fi
+
+#  Set path on the pod to save the dump file 
+TARGET_PATH="/var/lib/postgresql/data/forpgdump"
+
+# Step 3: Run pg_dump with nohup inside the pod
+oc exec "$REPLICA_POD" -n $PROJECT_CPD_INST_OPERANDS -- bash -c "
+  TARGET_PATH=\"$TARGET_PATH\"
+  JDBC_URI=\"$JDBC_URI\"
+  echo \"TARGET_PATH is $TARGET_PATH\"
+  mkdir -p $TARGET_PATH &&
+  chmod 777 $TARGET_PATH &&
+  nohup bash -c '
+    pg_dump $JDBC_URI -Fc -f $TARGET_PATH/cams_backup.dump > $TARGET_PATH/pgdump.log 2>&1 &&
+    echo \"Backup succeeded. Please copy $TARGET_PATH/cams_backup.dump file from this pod to a safe place and delete it on this pod to save space.\" >> $TARGET_PATH/pgdump.log
+  ' &
+  echo \"pg_dump started in background. Logs: $TARGET_PATH/pgdump.log\"
+"
+```
+
+Run the backup_postgres.sh script:
+
+```
+./backup_postgres.sh
+```
+
+The script starts the backup in a separate terminal session
+
+Set the REPLICA_POD environment variable:
+
+```
+REPLICA_POD=$(oc get pods -n ${PROJECT_CPD_INST_OPERANDS} -l app=ccs-cams-postgres -o jsonpath='{range .items[?(@.metadata.labels.role=="replica")]}{.metadata.name}{"\n"}{end}')
+```
+
+Open a remote shell in the replica pod:
+
+```
+oc rsh ${REPLICA_POD}
+```
+
+Change to the /var/lib/postgresql/data/forpgdump/ directory:
+
+```
+cd /var/lib/postgresql/data/forpgdump/
+```
+
+Run the following command to monitor the list of files in the directory:
+
+```
+ls -lat
+```
+
+Wait for the backup to complete. (This process can take several hours if the database is large.)
+
+Option 1 - In progress	-> During the backup, the size of the pgdump.log file increases.
+
+Option 2 - Complete	-> The backup is complete when the script writes the following message to the pgdump.log file: Backup succeeded. Please copy /var/lib/postgresql/data/forpgdump/cams_backup.dump file from this pod to a safe place and delete it on this pod to save space.
+
+Option 3 - Failed -> If the backup fails, the pgdump.log file will include error messages. If the backup fails, contact IBM Support. Append the pgdump.log file to your support case.
+
+***Do not proceed to the next step unless the backup is complete***
+
+Set the POSTGRES_BACKUP_STORAGE_LOCATION environment variable to the location where you want to store the backup:
+
+```
+export POSTGRES_BACKUP_STORAGE_LOCATION=<directory>
+```
+
+***Important: Ensure that you choose a location where the file will not be accidentally deleted***
+
+Copy the backup to the POSTGRES_BACKUP_STORAGE_LOCATION:
+
+```
+oc cp ${REPLICA_POD}:/var/lib/postgresql/data/forpgdump/cams_backup.dump \
+$POSTGRES_BACKUP_STORAGE_LOCATION/cams_backup.dump
+```
+
+Delete the backup from the replica pod:
+
+```
+oc rsh $REPLICA_POD rm -f /var/lib/postgresql/data/forpgdump/cams_backup.dump
+```
+
+Proceed to step 6. Consolidating the PostgreSQL database
+
+
+6. Consolidating the PostgreSQL database
+
+After you back up the new PostgreSQL database, you must consolidate all of the existing copies of identical data across governed catalogs into a single record so that all identical data assets share a set of common properties
+
+Set the INSTANCE_URL environment variable to the URL of IBM Software Hub:
+
+```
+export INSTANCE_URL=https://<URL>
+```
+
+Tip: To get the URL of the web client, run the following command:
+
+```
+cpd-cli manage get-cpd-instance-details \
+--cpd_instance_ns=${PROJECT_CPD_INST_OPERANDS}
+```
+
+Get the name of a catalog-api-jobs pod:
+
+```
+oc get pods -n ${PROJECT_CPD_INST_OPERANDS} \
+| grep catalog-api-jobs
+```
+
+Set the CAT_API_JOBS_POD environment variable to the name a pod returned by the preceding command:
+
+```
+export CAT_API_JOBS_POD=<pod-name>
+```
+
+Open a Bash prompt in the pod:
+
+```
+oc exec ${CAT_API_JOBS_POD} -n ${PROJECT_CPD_INST_OPERANDS} -it -- bash 
+```
+
+
+Run the following command to set the AUTH_TOKEN environment variable:
+
+```
+AUTH_TOKEN=$(cat /etc/.secrets/wkc/service_id_credential)
+```
+
+Start the consolidation:
+
+```
+curl -k -X PUT "${INSTANCE_URL}/v2/shared_assets/initialize_content?bss_account_id=999" \
+     -H "Authorization: Basic $AUTH_TOKEN"
+```
+
+The command returns a transaction ID
+
+***Important: Save the transaction ID so that you can refer to it later for debugging, if needed***
+
+Get the name of a catalog-api pod:
+
+```
+oc get pods \
+-n ${PROJECT_CPD_INST_OPERANDS} \
+| grep catalog-api \
+| grep -v catalog-api-jobs
+```
+
+Set the CAT_API_POD environment variable to the name a pod returned by the preceding command:
+
+```
+export CAT_API_POD=<pod-name>
+```
+
+Check the catalog-api pod logs to determine the status of the consolidation
+
+Check for the following success message:
+
+```
+oc logs ${CAT_API_POD} \
+-n ${PROJECT_CPD_INST_OPERANDS} \
+| grep "Initial consolidation with bss account 999 complete"
+```
+
+If the command returns a response the consolidation was successful, proceed to [What to do if the consolidation completed successfully](https://www.ibm.com/docs/en/software-hub/5.2.x?topic=services-completing-catalog-api-migration#catalog-api-migration__success)
+
+If the command returns an empty response, proceed to the next step
+
+Check for the following failure message:
+
+```
+oc logs ${CAT_API_POD} \
+-n ${PROJECT_CPD_INST_OPERANDS} \
+| grep "Error running initial consolidation with resource key"
+```
+
+If the command returns a response the consolidation failed, try to consolidate the database again. If the problem persists, contact [IBM Support](https://www.ibm.com/mysupport/s/topic/0TO50000000IYkUGAW/cloud-pak-for-data?language=en_US)
+
+If the command returns an empty response, proceed to the next step
+
+Check for the following failure message:
+
+```
+oc logs ${CAT_API_POD} \
+-n ${PROJECT_CPD_INST_OPERANDS} \
+| grep "Error executing initial consolidation for bss 999"
+```
+
+If the command returns a response the consolidation failed, try to consolidate the database again. If the problem persists, contact [IBM Support](https://www.ibm.com/mysupport/s/topic/0TO50000000IYkUGAW/cloud-pak-for-data?language=en_US)
+
+If the command returns an empty response, proceed to the next step
+
+If the preceding commands returned empty responses, wait 10 minutes before checking the pod logs again
+
+
+7. What to do if the consolidation completed successfully
+
+If the PostgreSQL database consolidation was successful, wait several weeks to confirm that the projects, catalogs, and spaces in your environment are working as expected.
+
+After you confirm that the projects, catalogs, and spaces are working as expected, run the following commands to clean up the migration resources:
+
+Delete the pods associated with the migration:
+
+```
+oc delete pod \
+-n ${PROJECT_CPD_INST_OPERANDS} \
+-l app=cams-postgres-migration-app
+```
+
+Delete the jobs associated with the migration:
+
+```
+oc delete job \
+-n ${PROJECT_CPD_INST_OPERANDS} \
+-l app=cams-postgres-migration-app
+```
+
+Delete the config maps associated with the migration:
+
+```
+oc delete cm \
+-n ${PROJECT_CPD_INST_OPERANDS} \
+-l app=cams-postgres-migration-app
+```
+
+Delete the secrets associated with the migration:
+
+```
+oc delete secret \
+-n ${PROJECT_CPD_INST_OPERANDS} \
+-l app=cams-postgres-migration-app
+```
+
+Delete the persistent volume claim associated with the migration:
+
+```
+oc delete pvc cams-postgres-migration-pvc \
+-n ${PROJECT_CPD_INST_OPERANDS}
+```
+
+***This marks the completion of the catalog-api service migration***
+
 
 ## 8. All Potential Issues
 
@@ -713,7 +1342,7 @@ cause a variety of issues, as experienced most recently during the E3-IPC1 upgra
 DB2COMM=TCPIP,SSL'. These configurations should persist through a Db2u pod recycle. Keep track of your Db2 configuration settings prior to upgrading to ensure you have a list of settings which you can restore.
 You can also [change configuration settings](https://www.ibm.com/docs/en/software-hub/5.2.x?topic=configuration-changing-db2-settings) after you deploy your instance
 
-This marks the end of the installation of IBM Software Hub, db2oltp and Data Gate
+This marks the end of the installation of IBM Software Hub, Db2oltp, Datagate, and Db2 Data Management Console
 
 ## 9. Validate CPD upgrade (customer acceptance test)
 
