@@ -28,18 +28,19 @@ Upgrade flow and steps
 
 ```
 1. CPD 5.0.3 precheck
-2. Update cpd-cli and env variables script for 5.2.2
-3. Backup CPD 5.0.3 CRs, cpd-instance, and cpd-operators namespaces
-4. Upgrade shared cluster components (ibm-cert-manager,ibm-licensing,scheduler)
-5. Prepare to upgrade an instance of IBM Software Hub
-6. Upgrade an instance of IBM Software Hub
-7. Upgrade CPD services (db2oltp,datagate,dmc)
-8. Potential Issues
-9. Validate CPD upgrade (customer acceptance test)
+2. Update cpd-cli and environment variables script for 5.2.2
+3. Prepare to run upgrades in a restricted network using a private container registry
+4. Backup CPD 5.0.3 CRs, cpd-instance, and cpd-operators namespaces
+5. Upgrade shared cluster components (ibm-cert-manager,ibm-licensing,scheduler)
+6. Prepare to upgrade an instance of IBM Software Hub
+7. Upgrade an instance of IBM Software Hub
+8. Upgrade CPD services (db2oltp,datagate,dmc)
+9. Potential Issues
+10. Validate CPD upgrade (customer acceptance test)
 ```
 
 
-## 1. CPD 5.2.2 pre-check
+## 1. CPD 5.0.3 pre-check
 
 Use a client workstation with internet (bastion or infra node) to download OCP and CPD images, and confirm the OS level, ensuring the OS is RHEL 8/9
 
@@ -53,7 +54,7 @@ Test internet connection, and make sure the output from the target URL and it ca
 curl -v https://github.com/IBM
 ```
 
-Prepare IBM entitlement key
+Prepare your IBM entitlement key
 
 Log in to <https://myibm.ibm.com/products-services/containerlibrary> with the IBMid and password that are associated with the entitled software.
 
@@ -172,13 +173,13 @@ podman login cp.icr.io -u cp -p ${IBM_ENTITLEMENT_KEY}
 Download and unpack the latest cpd-cli release
 
 ```
-wget https://github.com/IBM/cpd-cli/releases/download/v14.2.2/cpd-cli-linux-SE-14.2.2.tgz && gzip -d cpd-cli-linux-SE-14.2.2.tgz && tar -xvf cpd-cli-linux-SE-14.2.2.tar && rm -rf cpd-cli-linux-SE-14.2.2.tar
+wget https://github.com/IBM/cpd-cli/releases/download/v14.2.2/cpd-cli-linux-EE-14.2.2.tgz && gzip -d cpd-cli-linux-EE-14.2.2.tgz && tar -xvf cpd-cli-linux-EE-14.2.2.tar && rm -rf cpd-cli-linux-EE-14.2.2.tar
 ```
 
 Add the cpd-cli to your PATH variable, for example
 
 ```
-export PATH=/root/cpd-cli-linux-SE-14.2.2-2727:$PATH
+export PATH=/root/cpd-cli-linux-EE-14.2.2-2727:$PATH
 ```
 
 Update your environment variables script
@@ -206,7 +207,259 @@ cpd-cli manage restart-container
 ```
 
 
-## 3. Backup CPD 5.2.1 CRs, cp4d and cp4d-operators namespaces
+## 3. Prepare to run upgrades in a restricted network using a private container registry
+
+### Obtaining the olm-utils-v3 image
+
+If your cluster is in a restricted network, you must ensure that a supported version of the olm-utils-v3 image is on the client workstation from which you will run the installation commands. The latest version of the image is recommended
+
+The steps that you complete depend on whether you plan to use the same workstation in the cluster network
+
+Option 1 - You plan to use the same workstation inside the cluster network:
+
+When the workstation is connected to the internet, run the following command to update the olm-utils-v3 image on the workstation:
+
+```
+cpd-cli manage restart-container
+```
+
+Wait for the cpd-cli to return the following messages:
+
+```
+[SUCCESS] ... Successfully pulled the container image icr.io/cpopen/cpd/olm-utils-v3:latest
+[SUCCESS] ... Successfully started the container olm-utils-play
+[SUCCESS] ... Container olm-utils-play has been re-created
+```
+
+Option 2 - You plan to use a different workstation inside the cluster network:
+
+Before you begin, you must have the cpd-cli installed on a workstation in the cluster network
+
+From a workstation that can connect to the internet, ensure that Docker or Podman is running on the workstation
+
+Run the following command to save the olm-utils-v3 image to the client workstation:
+
+s390x clusters:
+
+```
+cpd-cli manage save-image \
+--from=icr.io/cpopen/cpd/olm-utils-v3:${VERSION}.s390x
+```
+
+This command saves the image as a compressed TAR file named icr.io_cpopen_cpd_olm-utils-v3_${VERSION}.s390x.tar.gz in the cpd-cli-workspace/olm-utils-workspace/work/offline directory
+
+Transfer the compressed file to a client workstation that can connect to the cluster. Ensure that you place the TAR file in the work/offline directory:
+
+s390x clusters:
+
+```
+icr.io_cpopen_cpd_olm-utils-v3_${VERSION}.s390x.tar.gz
+```
+
+From the workstation that can connect to the cluster, ensure that Docker or Podman is running on the workstation
+
+Run the following command to load the olm-utils-v3 image on the client workstation:
+
+s390x clusters:
+
+```
+cpd-cli manage load-image \
+--source-image=icr.io/cpopen/cpd/olm-utils-v3:${VERSION}.s390x
+```
+
+The command returns the following message when the image is loaded:
+
+```
+Loaded image: icr.io/cpopen/cpd/olm-utils:latest.s390x
+```
+
+Set the OLM_UTILS_IMAGE environment variable to ensure that the cpd-cli uses the version of the image on the client workstation
+
+s390x clusters:
+
+```
+export OLM_UTILS_IMAGE=icr.io/cpopen/cpd/olm-utils-v3:${VERSION}.s390x
+```
+
+Now that you've made the olm-utils-v3 image available on the client workstation, you're ready to download CASE packages
+
+### Downloading CASE packages
+
+If you will run the upgrade commands in a restricted network, you must have the CASE packages for the components that you plan to upgrade on the client workstation from which you will run the upgrade commands
+
+To prepare to run upgrades in a restricted network, download the CASE packages for the components that you plan to install
+
+Run the appropriate command depending on the site from which you plan to download the CASE packages:
+
+GitHub:
+
+```
+cpd-cli manage case-download \
+--components=${COMPONENTS} \
+--release=${VERSION}
+```
+
+IBM Cloud Pak Open Container Initiative:
+
+```
+cpd-cli manage case-download \
+--components=${COMPONENTS} \
+--release=${VERSION} \
+--from_oci=true
+```
+
+The CASE packages for the specified components are downloaded to the work directory
+
+**Important: If you transfer the CASE packages to other workstations, ensure that you complete the following steps on each workstation**
+
+Change to the directory that contains the work directory
+
+Set the following permissions on the work directory:
+
+```
+chown -R 1001 ./work
+chmod -R 775 ./work
+```
+
+Restart the container:
+
+```
+cpd-cli manage restart-container
+```
+
+### Mirroring images to a private container registry
+
+If you mirrored the images for IBM Cloud Pak® for Data Version 5.0 to a private container registry, you must mirror the images for IBM® Software Hub 5.2 to the private container registry before you upgrade your installation
+
+Mirroring images directly to the private container registry:
+
+Log in to the IBM Entitled Registry registry:
+
+```
+cpd-cli manage login-entitled-registry \
+${IBM_ENTITLEMENT_KEY}
+```
+
+Log in to the private container registry, the following command assumes that you are using private container registry that is secured with credentials:
+
+```
+cpd-cli manage login-private-registry \
+${PRIVATE_REGISTRY_LOCATION} \
+${PRIVATE_REGISTRY_PUSH_USER} \
+${PRIVATE_REGISTRY_PUSH_PASSWORD}
+```
+
+If your private registry is not secured omit the following arguments:
+- ${PRIVATE_REGISTRY_PUSH_USER}
+- ${PRIVATE_REGISTRY_PUSH_PASSWORD}
+
+Confirm that you have access to the images that you want to mirror from the IBM Entitled Registry and inspect the IBM Entitled Registry
+
+You already have the CASE packages on the client workstation:
+
+```
+cpd-cli manage list-images \
+--components=${COMPONENTS} \
+--release=${VERSION} \
+--inspect_source_registry=true
+```
+
+Download CASE packages from GitHub (github.com/IBM):
+
+```
+cpd-cli manage list-images \
+--components=${COMPONENTS} \
+--release=${VERSION} \
+--inspect_source_registry=true
+```
+
+Download CASE packages from the IBM Cloud Pak Open Container Initiative repository:
+
+```
+cpd-cli manage list-images \
+--components=${COMPONENTS} \
+--release=${VERSION} \
+--inspect_source_registry=true \
+--from_oci=true
+```
+
+The output is saved to the list_images.csv file in the work/offline/${VERSION} directory
+
+Check the output for errors, this command returns images that failed because of authorization errors or network errors:
+
+```
+grep "level=fatal" list_images.csv
+```
+
+The following applies to EDB Postgres Standard users only. If you purchased EDB Postgres Standard, run the following command to remove the EDB Postgres Enterprise images from the list of images that will be mirrored to the private container registry
+
+Workstations that use the default cpd-cli-workspace/olm-utils-workspace/work directory:
+
+```
+sed -i -e '/edb-postgres-advanced/d' ./cpd-cli-workspace/olm-utils-workspace/work/offline/${VERSION}/.ibm-pak/data/cases/ibm-cpd-edb/*/ibm-cpd-edb-*-images.csv
+```
+
+Workstations that use the CPD_CLI_MANAGE_WORKSPACE environment variable:
+
+```
+sed -i -e '/edb-postgres-advanced/d' ${CPD_CLI_MANAGE_WORKSPACE}/work/offline/${VERSION}/.ibm-pak/data/cases/ibm-cpd-edb/*/ibm-cpd-edb-*-images.csv
+```
+
+Mirror the images to the private container registry
+
+You need to mirror models or optional images:
+
+```
+cpd-cli manage mirror-images \
+--components=${COMPONENTS} \
+--groups=${IMAGE_GROUPS} \
+--release=${VERSION} \
+--target_registry=${PRIVATE_REGISTRY_LOCATION} \
+--arch=${IMAGE_ARCH} \
+--case_download=false
+```
+
+You don't need to mirror models or optional images:
+
+```
+cpd-cli manage mirror-images \
+--components=${COMPONENTS} \
+--release=${VERSION} \
+--target_registry=${PRIVATE_REGISTRY_LOCATION} \
+--arch=${IMAGE_ARCH} \
+--case_download=false
+```
+
+For each component, the command generates a log file in the work directory
+
+**Tip: Run the following command to print out any errors in the log files:**
+
+```
+grep "error" mirror_*.log
+```
+
+Confirm that the images were mirrored to the private container registry
+
+Inspect the contents of the private container registry:
+
+```
+cpd-cli manage list-images \
+--components=${COMPONENTS} \
+--release=${VERSION} \
+--target_registry=${PRIVATE_REGISTRY_LOCATION} \
+--case_download=false
+```
+
+The output is saved to the list_images.csv file in the work/offline/${VERSION} directory
+
+Check the output for errors, the command returns images that are missing or that cannot be inspected:
+
+```
+grep "level=fatal" list_images.csv
+```
+
+
+## 4. Backup CPD 5.2.1 CRs, cp4d and cp4d-operators namespaces
 
 Create a new directory and store the output of the following commands in that directory
 
@@ -230,7 +483,7 @@ mkdir operatorsbackup && cd operatorsbackup && oc adm inspect -n ${PROJECT_CPD_I
 ```
 
 
-## 4. Upgrade shared cluster components (ibm-cert-manager,ibm-licensing)
+## 5. Upgrade shared cluster components (ibm-cert-manager,ibm-licensing)
 
 Determine which project the License Service is in
 
@@ -276,7 +529,7 @@ oc get pods --namespace=${PROJECT_CS_CONTROL}
 ```
 
 
-## 5. Prepare to upgrade an instance of IBM Software Hub (est. 1-2 minutes)
+## 6. Prepare to upgrade an instance of IBM Software Hub (est. 1-2 minutes)
 
 Validate the health of your cluster, nodes, operators, and operands before proceeding with the upgrade:
 
@@ -320,7 +573,7 @@ cpd-cli manage apply-entitlement \
 --entitlement=cpd-standard
 ```
 
-## 6. Upgrade an instance of IBM Software Hub
+## 7. Upgrade an instance of IBM Software Hub
 
 Before you upgrade to IBM Software Hub, check whether the following common core services pods are running in this instance of IBM Cloud Pak for Data:
 
@@ -545,7 +798,7 @@ oc get pods --namespace=${PROJECT_CPD_INST_OPERATORS}
 Proceed with upgrading the services next
 
 
-## 7. Upgrade CPD services (db2oltp,datagate,dmc)
+## 8. Upgrade CPD services (db2oltp,datagate,dmc)
 
 In order to have more visibility into each service upgrade, it is recommended to upgrade the services in sequential order, as follows:
 
@@ -1310,7 +1563,7 @@ oc delete pvc cams-postgres-migration-pvc \
 ***This marks the completion of the catalog-api service migration***
 
 
-## 8. All Potential Issues
+## 9. All Potential Issues
 
 1. Setup-instance command will fail with 'imagepullbackoff' errors if the storage test images are missing. Mirror the storage test images ahead of time or exclude the '--run_storage_tests' flag
 
@@ -1344,6 +1597,6 @@ You can also [change configuration settings](https://www.ibm.com/docs/en/softwar
 
 This marks the end of the installation of IBM Software Hub, Db2oltp, Datagate, and Db2 Data Management Console
 
-## 9. Validate CPD upgrade (customer acceptance test)
+## 10. Validate CPD upgrade (customer acceptance test)
 
 End of document
