@@ -1325,41 +1325,70 @@ Complete the following tasks before you run the actual Data Gate upgrade:
 
 As a prerequisite for all upgrades, the license for your JDBC driver must be activated
 
+Check if the Db2 v12 license is already installed
+
+```
+cd /apps/bastion/DB2 unzip
+DB2_CUEz_QS_Activation_12.1.zip cd consv_zs/db2/license/ /
+usr/bin/java -classpath
+db2jcc4.jar:db2connectactivate.jar:DB2JccConfiguration.properties -Ddb2.jcc. sslConnection=true -Ddb2.jcc.sslTrustStoreLocation=truststore.jks
+-Ddb2.jcc.sslTrustStorePassword=BNPParibas - Ddb2.jcc.override.sslClientHostnameValidation=off com.ibm.db2.jcc.DB2ConnectActivate -host zfrb-dev-datagateplex.fr.net.intra -port
+15111 -DB2PROA database -user l318711 -password 11783629 -checkexisting
+```
+
+Otherwise, install the license
+
+DEV
+
+```
+/usr/bin/java -classpath db2jcc4.jar:db2connectactivate.jar:DB2JccConfiguration.properties -Ddb2.jcc. sslConnection=true -Ddb2.jcc.sslTrustStoreLocation=truststore.jks
+-Ddb2.jcc.sslTrustStorePassword=BNPParibas - Ddb2.jcc.override.sslClientHostnameValidation=off com.ibm.db2.jcc.DB2ConnectActivate -host zfrb-dev-datagateplex.fr.net.intra -port
+15111 -DB2PROA database -user l318711 -password 82849668
+```
+
+QUALIF
+
+```
+/usr/bin/java -classpath db2jcc4.jar:db2connectactivate.jar:DB2JccConfiguration.properties -Ddb2.jcc. sslConnection=true -Ddb2.jcc.sslTrustStoreLocation=truststore.jks
+-Ddb2.jcc.sslTrustStorePassword=BNPParibas - Ddb2.jcc.override.sslClientHostnameValidation=off com.ibm.db2.jcc.DB2ConnectActivate -host zfrbqualdatagateplex. fr.net.intra -port
+15111 -database DB2CTIM -activatorsqlid GDPDBCBA -user l318711 -password 26681112 Activating license to: jdbc:db2://zfrbqualdatagateplex.fr.net.intra:15111/
+DB2CTIM:currentSQLID=GDPDBCBA; [license activator][7010][13433]Activation completed successfully.
+```
+
+```
+/usr/bin/java -classpath db2jcc4.jar:db2connectactivate.jar:DB2JccConfiguration.properties -Ddb2.jcc. sslConnection=true -Ddb2.jcc.sslTrustStoreLocation=truststore.jks
+-Ddb2.jcc.sslTrustStorePassword=BNPParibas - Ddb2.jcc.override.sslClientHostnameValidation=off com.ibm.db2.jcc.DB2ConnectActivate -host zfrbqualdatagateplex. fr.net.intra -port
+15111 -database DB2CTIM -user l318711 -password 84601067 -checkexisting Activating license to: jdbc:db2://zfrbqualdatagateplex.fr.net.intra:15111/DB2CTIM [license activator][7020]
+[13452]The version of the installed DB2 Connect license on the server is :1201
+```
+
+Confirm with the following command
+
+```
+/usr/bin/java -classpath db2jcc4.jar:db2connectactivate.jar:DB2JccConfiguration.properties -Ddb2.jcc.
+sslConnection=true -Ddb2.jcc.sslTrustStoreLocation=truststore.jks -Ddb2.jcc.sslTrustStorePassword=BNPParibas -
+Ddb2.jcc.override.sslClientHostnameValidation=off com.ibm.db2.jcc.DB2ConnectActivate -host zfrb-dev-datagateplex.fr.net.intra -port 15111 -database DB2PROA -user
+l318711 -password 93421011 -checkexisting
+```
 
 2. [Cleaning up the data-gate-api container](https://www.ibm.com/docs/en/software-hub/5.2.x?topic=upgrade-cleaning-up-data-gate-api)
 
-Open a shell in the data-gate-api container of the Data Gate pod:
+Remote into the dg Open a shell in the data-gate-api container of the Data Gate pod
 
 ```
-oc exec -it -c data-gate-api ${DG_POD_ID} -- bash
+oc get pod -n cp4data | grep data-gate
 ```
 
-Determine the ID of the Data Gate instance you want to upgrade by running the oc get dginstance command, as in this example:
+Identify the Data Gate pod
 
 ```
-oc get dginstance -n ${PROJECT_CPD_INST_OPERANDS}
+dg-1737478278318519-data-gate-f4fff8f58-rp72p
 ```
 
-For example:
-
-```
-NAME                 VERSION   BUILD      STATUS      RECONCILED   AGE
-dg1699914520773847   5.0.3     5.0.3      Completed   5.0.3        6h7m
-
-The instance ID in this example is this example is dg1699914520773847
+oc exec -it -c data-gate-api dg-1737478278318519-data-gate-f4fff8f58-rp72p -- bash
 ```
 
-Determine the ID of the Data Gate instance's server pod by running the following command:
-
-```
-DG_POD_ID=$(oc get pod -l icpdsupport/app=dg-instance-server,\
-icpdsupport/serviceInstanceId=`echo ${DG_INSTANCE_ID} | 
-sed 's/^dg//'` -o jsonpath='{.items[0].metadata.name}')
-```
-
-DG_INSTANCE_ID is the instance ID you identified in step 1
-
-Run the following command:
+Run the following command
 
 ```
 rm -rf /head/clone-api/work/jetty-0_0_0_0-8188-clone-api_war-_clone_system-any-/webapp/* 2> /dev/null
@@ -1395,7 +1424,7 @@ cpd-cli manage get-cr-status \
 
 **Potential issue during the upgrade of Data Gate service instances**
 
-During Data Gate instance upgrade a dg-1750101262664465-backup-head-job pod runs, but it should be scheduled to any node where Db2 is not running. For this, cordon the node hosting Db2, and after the backup-head-job pod is completed, uncordon the same node
+During Data Gate instance upgrade a dg-1750101262664465-backup-head-job pod runs, but it should be scheduled to any node where Db2 is not running. For this, you can cordon the node hosting Db2, and after the backup-head-job pod is completed, uncordon the same node
 
 ### Upgrade the Data Gate service instances (est. 18 minutes):
 
