@@ -42,7 +42,7 @@ Upgrade flow and steps
 
 ## 1. CPD 5.0.3 pre-check
 
-### Use a client workstation with internet (bastion or infra node) to download OCP and CPD images, and confirm the OS level, ensuring the OS is RHEL 8/9
+Use a client workstation with internet (bastion or infra node) to download OCP and CPD images, and confirm the OS level, ensuring the OS is RHEL 8/9
 
 ```
 cat /etc/redhat-release
@@ -54,7 +54,7 @@ Test internet connection, and make sure the output from the target URL and it ca
 curl -v https://github.com/IBM
 ```
 
-### Prepare your IBM entitlement key
+Prepare your IBM entitlement key
 
 Log in to <https://myibm.ibm.com/products-services/containerlibrary> with the IBMid and password that are associated with the entitled software.
 
@@ -62,13 +62,13 @@ On the Get entitlement key tab, select Copy key to copy the entitlement key to t
 
 Save the API key in a text file.
 
-### Make sure free disk space more than 500 GB (to download images and pack the images into a tar ball)
+Make sure free disk space more than 500 GB (to download images and pack the images into a tar ball)
 
 ```
 df -lh
 ```
 
-### Collect OCP and CPD cluster information
+Collect OCP and CPD cluster information
 
 Log into OCP cluster from bastion node
 
@@ -76,49 +76,49 @@ Log into OCP cluster from bastion node
 oc login $(oc whoami --show-server) -u kubeadmin -p <kubeadmin-password>
 ```
 
-### Review OCP version
+Review OCP version
 
 ```
 oc get clusterversion
 ```
 
-### Review storage classes
+Review storage classes
 
 ```
 oc get sc
 ```
 
-### Review OCP cluster status and make sure all nodes are in ready status
+Review OCP cluster status and make sure all nodes are in ready status
 
 ```
 oc get nodes
 ```
 
-### Make sure all mc are in correct status, UPDATED all True, UPDATING all False, DEGRADED all False
+Make sure all mc are in correct status, UPDATED all True, UPDATING all False, DEGRADED all False
 
 ```
 oc get mcp
 ```
 
-### Make sure all co are in correct status, AVAILABLE all True, PROGRESSING all False, DEGRADED all False
+Make sure all co are in correct status, AVAILABLE all True, PROGRESSING all False, DEGRADED all False
 
 ```
 oc get co
 ```
 
-### Make sure there are no unhealthy pods, if there are, please open an IBM support case to fix them.
+Make sure there are no unhealthy pods, if there are, please open an IBM support case to fix them.
 
 ```
 oc get po -A -owide | egrep -v '([0-9])/\1' | egrep -v 'Completed' 
 ```
 
-### Get CPD installed projects
+Get CPD installed projects
 
 ```
 oc get pod -A | grep zen
 ```
 
-### Get CPD version and installed components
+Get CPD version and installed components
 
 ```
 cpd-cli manage login-to-ocp \
@@ -137,19 +137,19 @@ or
 cpd-cli manage list-deployed-components --cpd_instance_ns=${PROJECT_CPD_INST_OPERANDS}
 ```
 
-### Check the scheduling service, if it is installed but not in ibm-common-services project, uninstall it
+Check the scheduling service, if it is installed but not in ibm-common-services project, uninstall it
 
 ```
 oc get scheduling -A
 ```
 
-### Check install plan is automatic
+Check install plan is automatic
 
 ```
 oc get ip -A
 ```
 
-### Check the spec of each CPD custom resource, remove any patches before upgrading
+Check the spec of each CPD custom resource, remove any patches before upgrading
 
 ```
 oc project ${PROJECT_CPD_INST_OPERANDS}
@@ -159,7 +159,7 @@ oc project ${PROJECT_CPD_INST_OPERANDS}
 for i in $(oc api-resources | grep cpd.ibm.com | awk '{print $1}'); do echo "************* $i *************"; for x in $(oc get $i --no-headers | awk '{print $1}'); do echo "--------- $x ------------"; oc get $i $x -o jsonpath={.spec} | jq; done ; done
 ```
 
-### Probe IBM registry (if required)
+Probe IBM registry (if required)
 
 ```
 podman login cp.icr.io -u cp -p ${IBM_ENTITLEMENT_KEY}
@@ -167,7 +167,7 @@ podman login cp.icr.io -u cp -p ${IBM_ENTITLEMENT_KEY}
 
 Repair IAM Migration
 
-### Verfication Step 1
+Verfication Step 1
 
 Check if the infrastructure is affected
 
@@ -253,7 +253,7 @@ common-service-db-1              1/1 Running   0  14m
 common-service-db-2              1/1 Running   0  12m
 
 
-### Verfication Step 2
+Verfication Step 2
 
 Check if the mongodb service is still running
 
@@ -282,7 +282,7 @@ Delete the ibm-iam pod
 oc delete pod -n cpd-inst-operators ibm-iam-operator-7b755fc96d-t49hz
 ```
 
-### Save the existing configuration
+Save the existing configuration
 
 ```
 cd /apps/bastion/backup
@@ -299,7 +299,7 @@ oc get cm -n cp4data c-db2oltp-1734440804666892-db2dbmconfig -o yaml > c-db2oltp
 
 ## 2. Update cpd-cli and environment variables script for 5.2.2
 
-### Prepare cpd-cli and environment variables
+Prepare cpd-cli and environment variables
 
 Connect to the GRAFANA server
 
@@ -362,7 +362,7 @@ Source your environment variables
 source cpd_vars.sh
 ```
 
-### Test connection to the artifactory
+Test connection to the artifactory
 
 Install Podman and Docker
 
@@ -400,7 +400,7 @@ podman ps
 
 ## 3. Prepare to run upgrades in a restricted network using a private container registry
 
-### Obtaining the olm-utils-v3 image (skip, if not required)
+Obtaining the olm-utils-v3 image (skip, if not required)
 
 If your cluster is in a restricted network, you must ensure that a supported version of the olm-utils-v3 image is on the client workstation from which you will run the installation commands. The latest version of the image is recommended
 
@@ -474,7 +474,7 @@ export OLM_UTILS_IMAGE=icr.io/cpopen/cpd/olm-utils-v3:${VERSION}.s390x
 
 Now that you've made the olm-utils-v3 image available on the client workstation, you're ready to download CASE packages
 
-### Downloading CASE packages
+Downloading CASE packages
 
 If you will run the upgrade commands in a restricted network, you must have the CASE packages for the components that you plan to upgrade on the client workstation from which you will run the upgrade commands
 
@@ -518,7 +518,7 @@ Restart the container:
 cpd-cli manage restart-container
 ```
 
-### Mirroring images to a private container registry
+Mirroring images to a private container registry
 
 If you mirrored the images for IBM Cloud Pak® for Data Version 5.0 to a private container registry, you must mirror the images for IBM® Software Hub 5.2 to the private container registry before you upgrade your installation
 
@@ -1007,7 +1007,7 @@ ALTER TABLE platformdb.users_attributes ADD CONSTRAINT fk_useratt_fk FOREIGN KEY
 
 Otherwise, use `quit` followed by `exit`
 
-### Upgrade the required operators and custom resources for the instance (est. 60 minutes):
+Upgrade the required operators and custom resources for the instance (est. 60 minutes):
 
 ```
 cpd-cli manage setup-instance \
@@ -1083,7 +1083,7 @@ ALTER TABLE platformdb.users_attributes ADD CONSTRAINT fk_useratt_fk FOREIGN KEY
 ```
 
 
-### Upgrade the operators in the operators project (est. 15 minutes):
+Upgrade the operators in the operators project (est. 15 minutes):
 
 ```
 cpd-cli manage apply-olm \
@@ -1520,7 +1520,7 @@ DMC is upgraded when the apply-cr command returns:
 [SUCCESS]... The apply-cr command ran successfully
 ```
 
-### Complete the catalog-api service migration:
+Complete the catalog-api service migration:
 
 After you upgrade the common core services to IBM® Software Hub Version 5.2, the back-end database for the catalog-api service is migrated from CouchDB to PostgreSQL
 
