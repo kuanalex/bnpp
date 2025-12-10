@@ -6,8 +6,8 @@ From:
 
 ```
 CPD: 5.0.3
-OCP: 4.18.27
-Storage: FDF 2.9.1
+OCP: 4.18.xx
+Storage: tbd
 Internet: proxy
 Private container registry: yes
 Components: ibm-cert-manager,ibm-licensing,cpfs,cpd_platform,db2oltp,datagate,dmc
@@ -17,8 +17,8 @@ To:
 
 ```
 CPD: 5.2.2
-OCP: 4.18.27
-Storage: FDF 2.9.1
+OCP: 4.18.xx
+Storage: tbd
 Internet: proxy
 Private container registry: yes
 Components: ibm-cert-manager,ibm-licensing,cpfs,cpd_platform,db2oltp,datagate,dmc
@@ -27,20 +27,21 @@ Components: ibm-cert-manager,ibm-licensing,cpfs,cpd_platform,db2oltp,datagate,dm
 Upgrade flow and steps
 
 ```
-1. CPD 5.0.3 precheck
-2. Update cpd-cli and environment variables script for 5.2.2
-3. Prepare to run upgrades in a restricted network using a private container registry
-4. Backup CPD 5.0.3 CRs, cp4data, and cpd-inst-operators namespaces
-5. Upgrade shared cluster components (ibm-cert-manager,ibm-licensing,scheduler)
-6. Prepare to upgrade an instance of IBM Software Hub
-7. Upgrade an instance of IBM Software Hub
-8. Upgrade CPD services (db2oltp,datagate,dmc)
-9. Potential Issues
+1. CPD 5.0.3 pre-check
+2. Prepare to run upgrades in a restricted network using a private container registry
+3. Backup CPD 5.0.3 CRs, cp4data, and cpd-inst-operators namespaces
+4. Upgrade shared cluster components (ibm-cert-manager,ibm-licensing,scheduler)
+5. Prepare to upgrade an instance of IBM Software Hub
+6. Upgrade an instance of IBM Software Hub
+7. Upgrade CPD services (db2oltp,datagate,dmc)
+8. Completing the catalog-api service migration
+9. Potential Issues To Be Aware Of
 10. Validate CPD upgrade (customer acceptance test)
 ```
 
 
 ## 1. CPD 5.0.3 pre-check
+
 
 ### Use a client workstation with internet (bastion or infra node) to download OCP and CPD images, and confirm the OS level, ensuring the OS is RHEL 8/9
 
@@ -54,6 +55,7 @@ Test internet connection, and make sure the output from the target URL and it ca
 curl -v https://github.com/IBM
 ```
 
+
 ### Prepare your IBM entitlement key
 
 Log in to <https://myibm.ibm.com/products-services/containerlibrary> with the IBMid and password that are associated with the entitled software.
@@ -62,11 +64,13 @@ On the Get entitlement key tab, select Copy key to copy the entitlement key to t
 
 Save the API key in a text file.
 
+
 ### Make sure free disk space more than 500 GB (to download images and pack the images into a tar ball)
 
 ```
 df -lh
 ```
+
 
 ### Collect OCP and CPD cluster information
 
@@ -76,11 +80,13 @@ Log into OCP cluster from bastion node
 oc login $(oc whoami --show-server) -u kubeadmin -p <kubeadmin-password>
 ```
 
+
 ### Review OCP version
 
 ```
 oc get clusterversion
 ```
+
 
 ### Review storage classes
 
@@ -88,11 +94,13 @@ oc get clusterversion
 oc get sc
 ```
 
+
 ### Review OCP cluster status and make sure all nodes are in ready status
 
 ```
 oc get nodes
 ```
+
 
 ### Make sure all mc are in correct status, UPDATED all True, UPDATING all False, DEGRADED all False
 
@@ -100,11 +108,13 @@ oc get nodes
 oc get mcp
 ```
 
+
 ### Make sure all co are in correct status, AVAILABLE all True, PROGRESSING all False, DEGRADED all False
 
 ```
 oc get co
 ```
+
 
 ### Make sure there are no unhealthy pods, if there are, please open an IBM support case to fix them.
 
@@ -112,11 +122,13 @@ oc get co
 oc get po -A -owide | egrep -v '([0-9])/\1' | egrep -v 'Completed' 
 ```
 
+
 ### Get CPD installed projects
 
 ```
 oc get pod -A | grep zen
 ```
+
 
 ### Get CPD version and installed components
 
@@ -137,17 +149,20 @@ or
 cpd-cli manage list-deployed-components --cpd_instance_ns=${PROJECT_CPD_INST_OPERANDS}
 ```
 
+
 ### Check the scheduling service, if it is installed but not in ibm-common-services project, uninstall it
 
 ```
 oc get scheduling -A
 ```
 
+
 ### Check install plan is automatic
 
 ```
 oc get ip -A
 ```
+
 
 ### Check the spec of each CPD custom resource, remove any patches before upgrading
 
@@ -159,15 +174,92 @@ oc project ${PROJECT_CPD_INST_OPERANDS}
 for i in $(oc api-resources | grep cpd.ibm.com | awk '{print $1}'); do echo "************* $i *************"; for x in $(oc get $i --no-headers | awk '{print $1}'); do echo "--------- $x ------------"; oc get $i $x -o jsonpath={.spec} | jq; done ; done
 ```
 
-### Probe IBM registry (if required)
+
+### Stop Data Gate synchronization
+
+Stop Data Gate synchronization from the CP4D UI
+
+Monitor in Grafana for NOK status, wait 5 minutes until it becomes NOK status
+
+
+### Stop Planned Restart Shutdowns
+
+On 21.15 - Technical restart - MDP - MD15B - Confluence , check the schedule to see if weekly shutdowns/restarts are planned during your upgrade
+
+If round trips are planned, comment out the cron job
+
+Also, remember to comment out the environment on the other datacenter (example: you perform an operation on PROD MN, stop the restart on PROD MN and PROD ME)
+
+Before continuing, verify that at least 1 cluster per environment is available
+
+
+### Prepare the cpd-cli tool
+
+Connect to the GRAFANA server
+
+DEV - s02vl9925125
+
+QUALIFICATION - S02VL9925965
+
+PROD - S02VL9926323
+
+Retrieve the tar file containing the latest version of cpd-cli and the offline sources as prepared in a previous step
+
+Prepare the File System
 
 ```
-podman login cp.icr.io -u cp -p ${IBM_ENTITLEMENT_KEY}
+lvcreate -n lv_cpdcli -L 10G /dev/vg_apps
+mke2fs -j -i 1024 /dev/vg_apps/lv_cpdcli
 ```
 
-Repair IAM Migration
+```
+vi /etc/fstab
+```
 
-### Verfication Step 1
+/dev/vg_apps/lv_cpdcli /apps/cpdcli ext4 defaults 1 2
+
+```
+systemctl daemon-reload
+mkdir /apps/cpdcli
+mount /apps/cpdcli
+```
+
+Unzip the file
+
+```
+cd /apps/cpdcli
+tar -xvf cpd-cli-linux-SE-14.2.2-2727_with_sources.tar
+chmod -R 777 /apps/cpdcli/cpd-cli-linux-SE-14.2.2-2727
+```
+
+Optionally, add the cpd-cli to your PATH variable, for example
+
+```
+export PATH=/root/cpd-cli-linux-SE-14.2.2-2727:$PATH
+```
+
+Update your environment variables script
+
+```
+vi cpd_vars.sh
+```
+
+Update the Version field and save your changes
+
+```
+VERSION=5.2.2
+```
+
+Source your environment variables
+
+```
+source cpd_vars.sh
+```
+
+
+### Repair IAM Migration
+
+Verfication Step 1
 
 Check if the infrastructure is affected
 
@@ -253,7 +345,7 @@ common-service-db-1              1/1 Running   0  14m
 common-service-db-2              1/1 Running   0  12m
 
 
-### Verfication Step 2
+Verfication Step 2
 
 Check if the mongodb service is still running
 
@@ -282,6 +374,22 @@ Delete the ibm-iam pod
 oc delete pod -n cpd-inst-operators ibm-iam-operator-7b755fc96d-t49hz
 ```
 
+
+### Comment out the sync check
+
+On the GRAFANA server (primary and secondary)
+
+```
+crontab -e
+```
+
+The line to comment is
+
+```
+* * * * * /storage/datagatesupervision/automation_status.sh
+```
+
+
 ### Save the existing configuration
 
 ```
@@ -297,72 +405,105 @@ oc get cm -n cp4data c-db2oltp-1734440804666892-db2dbmconfig -o yaml > c-db2oltp
 ```
 
 
-## 2. Update cpd-cli and environment variables script for 5.2.2
+### Update environment variables script for 5.2.2
 
-### Prepare cpd-cli and environment variables
+Prepare it by copying an existing file in /apps/cpdcli and copying it into a new file and replace the following values
 
-Connect to the GRAFANA server
-
-DEV - s02vl9925125
-
-QUALIFICATION - S02VL9925965
-
-PROD - S02VL9926323
-
-Retrieve the tar file containing the latest version of cpd-cli and the offline sources as prepared in a previous step
-
-Prepare the File System
+Create the file
 
 ```
-lvcreate -n lv_cpdcli -L 10G /dev/vg_apps
-mke2fs -j -i 1024 /dev/vg_apps/lv_cpdcli
+vi /apps/cpdcli/env_devme.sh
 ```
 
-```
-vi /etc/fstab
-```
-
-/dev/vg_apps/lv_cpdcli /apps/cpdcli ext4 defaults 1 2
+Paste this template into the file
 
 ```
-systemctl daemon-reload
-mkdir /apps/cpdcli
-mount /apps/cpdcli
+#===============================================================================
+# Cloud Pak for Data installation variables
+#==============================================================================
+# ------------------------------------------------------------------------------
+# Cluster #
+-------------------------------------------------------------------------------
+export OCP_URL=https://api.oc001b000003.fr.net.intra:6443 export
+OPENSHIFT_TYPE=self-managed export
+OCP_USERNAME="kubeadmin" export
+OCP_PASSWORD=<A_COMPLETER_A_PARTIR_DU_FICHIER_CONNECTION> (see connections.docx) export
+OCP_TOKEN=<TO_COMPLETE_BY_READING_BELOW>
+export SERVER_ARGUMENTS="--server=${OCP_URL}"
+export LOGIN_ARGUMENTS="--username=${OCP_USERNAME} --password=${OCP_PASSWORD}"
+export CPDM_OC_LOGIN="cpd-cli manage login-to-ocp ${SERVER_ARGUMENTS} ${LOGIN_ARGUMENTS}"
+export OC_LOGIN="oc login ${OCP_URL} ${LOGIN_ARGUMENTS}"
+# ------------------------------------------------------------------------------
+# Projects #
+-------------------------------------------------------------------------------
+export PROJECT_CPFS_OPS=ibm-common-services #export
+PROJECT_CPD_OPS=cpd-operators #export
+PROJECT_CATSRC=openshift-marketplace export
+PROJECT_CPD_INSTANCE=cp4data # export
+PROJECT_TETHERED=<enter the tethered project> export
+PROJECT_CERT_MANAGER=ibm-cert-manager export
+PROJECT_LICENSE_SERVICE=ibm-licensing export
+PROJECT_CS_CONTROL=cs-control #export
+PROJECT_SCHEDULING_SERVICE=scheduling-service export
+PROJECT_CPD_INST_OPERATORS=cpd-inst-operators export
+PROJECT_CPD_INST_OPERANDS=cp4data #export
+PROJECT_CPD_INSTANCE_TETHERED_LIST=cpd-instance-tethered-list
+# ------------------------------------------------------------------------------
+# Storage #
+-------------------------------------------------------------------------------
+export STG_CLASS_BLOCK=ibm-spectrum-scale-sc-cp4d export
+STG_CLASS_FILE=ibm-spectrum-scale-sc-cp4d
+# ------------------------------------------------------------------------------
+# Cloud Pak for Data version #
+------------------------------------------------------------------------------
+export VERSION=5.2.2
+# ------------------------------------------------------------------------------- # Components
+#
+------------------------------------------------------------------------------- # Set the
+following variable if you want to install or upgrade multiple components at the same time. # # To export the variable, you must
+uncomment the command.
+export COMPONENTS=ibm-cert-manager,ibm-licensing,cpfs,cpd_platform,datagate,db2oltp,dmc
 ```
 
-Unzip the file
+Replace the OCP_URL, OCP_PASSWORD, and OCP_TOKEN values appropriately
 
 ```
-cd /apps/cpdcli
-tar -xvf cpd-cli-linux-SE-14.2.2-2727_with_sources.tar
-chmod -R 777 /apps/cpdcli/cpd-cli-linux-SE-14.2.2-2727
+export OCP_URL=https://api.oc001b000003.fr.net.intra:6443 export
+OPENSHIFT_TYPE=self-managed 
+export OCP_USERNAME="kubeadmin" 
+export OCP_PASSWORD=<A_COMPLETER_A_PARTIR_DU_FICHIER_CONNECTION> (see connections.docx) 
+export OCP_TOKEN=<TO_COMPLETE_BY_READING_BELOW>
 ```
 
-Optionally, add the cpd-cli to your PATH variable, for example
+To obtain the OCP_TOKEN run the following command on Grafana
 
 ```
-export PATH=/root/cpd-cli-linux-SE-14.2.2-2727:$PATH
+oc login --insecure-skip-tls-verify=true -u kubeadmin --server=https://api.oc001b000004.fr.net.intra:6443
 ```
 
-Update your environment variables script
+Enter the password from the Connections.docx file
+
+Once connected, run
 
 ```
-vi cpd_vars.sh
+oc whoami -t
 ```
 
-Update the Version field and save your changes
+Replace the OCP_TOKEN value, for example
 
 ```
-VERSION=5.2.2
+export OCP_TOKEN=sha256~Zmo3ezi0lDLGJ9opd1wxJQ5-tyWPBCJNVTJ5cipK9MQ
 ```
 
-Source your environment variables
+Apply permissions and source the environment variables
 
 ```
-source cpd_vars.sh
+chmod 755 /apps/cpdcli/env_devme.sh . /apps/cpdcli/
+env_devme.sh
 ```
 
-### Test connection to the artifactory
+
+### Connection to the artifactory
 
 Install Podman and Docker
 
@@ -381,26 +522,22 @@ podman login redhat-io-docker-oc.artifactory-dogen.group.echonet.net.intra
 
 If there is a problem, check the registries in /etc/containers/registries.conf
 
-Launch the olm-utils-play-v3 container
+
+### Obtaining the olm-utils-v3 image (skip, if not required)
 
 ```
 cd /apps/cpdcli/cpd-cli-linux-SE-14.2.2-2727
-```
 
-```
-cpd-cli manage restart-container
-```
+./cpd-cli manage restart-container
 
-Confirm the olm container is running
-
-```
 podman ps
 ```
 
 
-## 3. Prepare to run upgrades in a restricted network using a private container registry
+## 2. Prepare to run upgrades in a restricted network using a private container registry (skip, if not required)
 
-### Obtaining the olm-utils-v3 image (skip, if not required)
+
+### Obtaining the olm-utils-v3 image
 
 If your cluster is in a restricted network, you must ensure that a supported version of the olm-utils-v3 image is on the client workstation from which you will run the installation commands. The latest version of the image is recommended
 
@@ -474,7 +611,8 @@ export OLM_UTILS_IMAGE=icr.io/cpopen/cpd/olm-utils-v3:${VERSION}.s390x
 
 Now that you've made the olm-utils-v3 image available on the client workstation, you're ready to download CASE packages
 
-### Downloading CASE packages
+
+### Downloading CASE packages (skip, if not required)
 
 If you will run the upgrade commands in a restricted network, you must have the CASE packages for the components that you plan to upgrade on the client workstation from which you will run the upgrade commands
 
@@ -518,7 +656,30 @@ Restart the container:
 cpd-cli manage restart-container
 ```
 
-### Mirroring images to a private container registry
+
+### Connecting to Openshift
+
+Log in to Openshift
+
+```
+/apps/cpdcli/cpd-cli-linux-SE-14.2.2-2727 
+```
+
+```
+./cpd-cli manage login-to-ocp --user=${OCP_USERNAME} --password=${OCP_PASSWORD} --token=${OCP_TOKEN} -- server=${OCP_URL}
+```
+
+If there are errors during login run the following commands
+
+```
+podman login cp-icr.artifactory-dogen.group.echonet.net.intra
+podman login icr.artifactory-dogen.group.echonet.net.intra
+podman login quay-io-oc.artifactory-dogen.group.echonet.net.intra
+podman login redhat-io-docker-oc.artifactory-dogen.group.echonet.net.intra
+```
+
+
+### Mirroring images to a private container registry (skip to Step 3, if not required)
 
 If you mirrored the images for IBM Cloud Pak® for Data Version 5.0 to a private container registry, you must mirror the images for IBM® Software Hub 5.2 to the private container registry before you upgrade your installation
 
@@ -541,8 +702,8 @@ ${PRIVATE_REGISTRY_PUSH_PASSWORD}
 ```
 
 If your private registry is not secured omit the following arguments:
-- ${PRIVATE_REGISTRY_PUSH_USER}
-- ${PRIVATE_REGISTRY_PUSH_PASSWORD}
+-${PRIVATE_REGISTRY_PUSH_USER}
+-${PRIVATE_REGISTRY_PUSH_PASSWORD}
 
 Confirm that you have access to the images that you want to mirror from the IBM Entitled Registry and inspect the IBM Entitled Registry
 
@@ -650,7 +811,7 @@ grep "level=fatal" list_images.csv
 ```
 
 
-## 4. Backup CPD 5.2.1 CRs, cp4data and cpd-inst-operators namespaces
+## 3. Backup CPD 5.0.3 CRs, cp4data and cpd-inst-operators namespaces
 
 Create a new directory and store the output of the following commands in that directory
 
@@ -674,7 +835,7 @@ mkdir operatorsbackup && cd operatorsbackup && oc adm inspect -n ${PROJECT_CPD_I
 ```
 
 
-## 5. Upgrade shared cluster components (ibm-cert-manager,ibm-licensing)
+## 4. Upgrade shared cluster components (ibm-cert-manager,ibm-licensing)
 
 Determine which project the License Service is in
 
@@ -720,9 +881,10 @@ oc get pods --namespace=${PROJECT_CS_CONTROL}
 ```
 
 
-## 6. Prepare to upgrade an instance of IBM Software Hub (est. 1-2 minutes)
+## 5. Prepare to upgrade an instance of IBM Software Hub (est. 1-2 minutes)
 
-Validate the health of your cluster, nodes, operators, and operands before proceeding with the upgrade:
+
+### Validate the health of your cluster, nodes, operators, and operands before proceeding with the upgrade:
 
 ```
 cpd-cli health operators \
@@ -752,7 +914,8 @@ cpd-cli health nodes
 
 Results should read "SUCCESS..."
 
-[Next, apply entitlements](https://www.ibm.com/docs/en/software-hub/5.2.x?topic=puish-applying-your-entitlements-3) (est. 1-2 minutes):
+
+### [Next, apply entitlements](https://www.ibm.com/docs/en/software-hub/5.2.x?topic=puish-applying-your-entitlements-3) (est. 1-2 minutes):
 
 Run the apply-entitlement command for each solution that is installed or that you plan to install in this instance
 
@@ -764,7 +927,8 @@ cpd-cli manage apply-entitlement \
 --entitlement=cpd-standard
 ```
 
-Disable Bedrock customiztion
+
+### Disable Bedrock customiztion
 
 ```
 oc get sts -n cp4data |grep db2u
@@ -791,9 +955,10 @@ error: statefulsets/c-db2oltp-1736767772824325-db2u volume 'db2u-entrypoint-sh' 
 ```
 
 
-## 7. Upgrade an instance of IBM Software Hub
+## 6. Upgrade an instance of IBM Software Hub
 
-Before you upgrade to IBM Software Hub, check whether the following common core services pods are running in this instance of IBM Cloud Pak for Data:
+
+### Before you upgrade to IBM Software Hub, check whether the following common core services pods are running in this instance of IBM Cloud Pak for Data:
 
 Check whether the global search pods are running:
 
@@ -950,7 +1115,8 @@ oc patch ccs ccs-cr \
 --patch '{"spec": {"use_semi_auto_catalog_api_migration": true}}'
 ```
 
-Proceed with the upgrade of IBM Software Hub
+
+### Proceed with the upgrade of IBM Software Hub
 
 ***Important: After you upgrade the services in your environment, ensure that you complete Completing the [catalog-api service migration](https://www.ibm.com/docs/en/software-hub/5.2.x?topic=services-completing-catalog-api-migration)***
 
@@ -969,6 +1135,9 @@ cpd-cli manage get-license \
 --release=${VERSION} \
 --license-type=SE
 ```
+
+
+### Prerequisite steps for problem detected on DEV ME
 
 Retrieve the common-service-db-superuser password
 
@@ -1006,6 +1175,7 @@ ALTER TABLE platformdb.users_attributes ADD CONSTRAINT fk_useratt_fk FOREIGN KEY
 ```
 
 Otherwise, use `quit` followed by `exit`
+
 
 ### Upgrade the required operators and custom resources for the instance (est. 60 minutes):
 
@@ -1103,16 +1273,64 @@ Confirm that the operator pods are Running or Completed:
 oc get pods --namespace=${PROJECT_CPD_INST_OPERATORS}
 ```
 
+
+### Certificate Verification for CommonService
+
+Log in to the CPD interface
+
+```
+https://cpd-cp4data.apps.oc001b000004.dev.echonet.net.intra/
+```
+
+Check or modify the CommonService
+
+```
+oc edit commonservice -n cpd-inst-operators common-service
+```
+
+If there has been a change in the config -> ingress -> hostname or secret fields, restart the pods
+
+```
+spec:
+authentication:
+config:
+ingress:
+hostname: cp-console-cp4data.apps.oc001b000004.dev.echonet 
+secret: cpd-tls-secret 
+labels:
+
+icpdsupport/addOnId: cpfs
+icpdsupport/app: im
+icpdsupport/component: im
+icpdsupport/module: im
+```
+
+Here are the delete commands
+
+```
+oc delete po -lapp=platform-auth-service 
+oc delete po -lapp=platform-identity-provider 
+oc delete po -lapp=platform-identity-management 
+oc delete po -lcomponent=usermgmt
+```
+
+Log in to the CPD interface and confirm the disappearance of the exception
+
+```
+https://cpd-cp4data.apps.oc001b000004.dev.echonet
+```
+
 Proceed with upgrading the services next
 
 
-## 8. Upgrade CPD services (db2oltp,datagate,dmc)
+## 7. Upgrade CPD services (db2oltp,datagate,dmc)
 
 In order to have more visibility into each service upgrade, it is recommended to upgrade the services in sequential order, as follows:
 
+
 ### Upgrade Db2 custom resource (est. 10 minutes)
 
-**Important: Before you proceed, Stop Data Gate synchronization in the UI**
+**Important: Before you proceed, make sure Data Gate synchronization has been stopped**
 
 Before you upgrade the Db2 custom resource, check the status of the zen-metastore-edb pods
 
@@ -1172,89 +1390,71 @@ Db2 is upgraded when the apply-cr command returns:
 ### Upgrade Db2 instances (est. 10 minutes)
 
 **Before you proceed, ensure your Db2 license is upgraded and CPD profile are set up**
--   [Upgrading the license before you
-    deploy Db2](https://www.ibm.com/docs/en/SSNFH6_5.2.x/svc-db2/db2-update-lic.html)
 
--   [Creating a profile to use the cpd-cli management
-    commands](https://www.ibm.com/docs/en/software-hub/5.2.x?topic=cli-creating-cpd-profile)
-	
 
-**Potential issue during the upgrade of Db2 service instance related to tempspace1**
+### [Upgrading the license before you deploy Db2](https://www.ibm.com/docs/en/SSNFH6_5.2.x/svc-db2/db2-update-lic.html)
 
-During the Db2 instance upgrade you may observe any issue with Tempspace1, "Table space access is not allowed." 
+Retrieve the license file: DB2 Standard Edition 12.1: db2std_vpc.lic
 
-This problem is related to the usage of local storage and results in missing files and missing folder structures within the Db2u pod. 
-
-To address this, you will need to create a specific directory structure inside the Db2u pod and copy the container tag to this location. 
-
-RSH into the Db2u pod and run the following commands to create the folder structure and copy the container tag to the same location. 
-
-Please keep in mind that the container name will change.
-
-Start by transfer the SQLTAG.NAM file into the Db2 pod
+Encode the license
 
 ```
-oc cp SQLTAG.NAM c-db2oltp-1736767772824325-db2u-0:/tmp
+base64 -w0 db2std_vpc.lic
 ```
 
-Recreate the directory (Note: the SQLTAG.NAM file is located in /apps/bastion/install_files of bastion DEV ME)
-
 ```
-cd /tmp
-chmod 777 SQLTAG.NAM
-su - db2inst1
-mkdir -p /mnt/tempts/systemp/db2inst1/NODE0000/BCEFDB/T0000001/C0000000.TMP
-```
-
-Copy the container tag and update permissions
-
-```
-cd /tmp
-cp SQLTAG.NAM /mnt/tempts/systemp/db2inst1/NODE0000/BCEFDB/T0000001/C0000000.TMP
-chmod 600 /mnt/tempts/systemp/db2inst1/NODE0000/BCEFDB/T0000001/C0000000.TMP/SQLTAG.NAM
-chown db2inst1:db2iadm1 /mnt/tempts/systemp/db2inst1/NODE0000/BCEFDB/T0000001/C0000000.TMP/SQLTAG.NAM
+oc patch Db2oltpservice db2oltp-cr -n cp4data --type merge -p "{\"spec\":{\"license\":{\"license\":\"Standard\", \"licenseValue\":{\"value64\":\"
+ZTNlNTQ1NTM5YTQ2NzdlMDM3ODU4Mzg4ODliYjk0ZDRlNDI1MmQyNjc4MDhlOGZmODNjZWJhNjQzMTM3MjdkMQ0KRGVyaXZlZExpY2Vuc2VBZ2dy
+ZWdhdGVEdXJhdGlvbj0NCkRlcml2ZWRMaWNlbnNlRW5kRGF0ZT0NCkRlcml2ZWRMaWNlbnNlU3RhcnREYXRlPQ0KTGljZW5zZUR1cmF0aW9uPTY3
+MTYNCkxpY2Vuc2VFbmREYXRlPTEyLzMxLzIwMzcNCkxpY2Vuc2VTdGFydERhdGU9MDgvMTMvMjAxOQ0KUHJvZHVjdEFubm90YXRpb249MTI3IDE0
+MyAyNTUgMjU1IDk0IDI1NSAxIDAgMCAwLTI3OyMwIDEyOCAxNiAwIDANClByb2R1Y3RJRD0xNDA1DQpQcm9kdWN0TmFtZT1EQjIgU3RhbmRhcmQg
+RWRpdGlvbg0KUHJvZHVjdFZlcnNpb249MTIuMQ0K\"}}}}"
 ```
 
-In the Db2 terminal run the following command
-
 ```
-CREATE TEMPORARY TABLESPACE "TEMPSPACE2" IN DATABASE PARTITION GROUP IBMTEMPGROUP PAGESIZE 16384 MANAGED BY AUTOMATIC STORAGE USING STOGROUP "IBMDB2UTEMPSG1" EXTENTSIZE 4 PREFETCHSIZE AUTOMATIC BUFFERPOOL "IBMDEFAULTBP" OVERHEAD INHERIT TRANSFERRATE INHERIT FILE SYSTEM CACHING DROPPED TABLE RECOVERY OFF
-
-drop tablespace TEMPSPACE1
-
-quit
+oc get Db2oltpService db2oltp-cr -n cp4data -o jsonpath='{.status.db2oltpStatus} {"\n"}'
 ```
 
 
-After these steps, confirm that Db2 can start and then once you can connect to Db2, run the below commands as Db2 instance owner to take the backup of the container tags, as this backup will be used to restore the container tags when the pod starts again:
+### [Creating a profile to use the cpd-cli management commands](https://www.ibm.com/docs/en/software-hub/5.2.x?topic=cli-creating-cpd-profile)
+
+Connect to the Cloud Pak user interface and retrieve an API key
+
+Click on Profile and settings
+
+Click on Generate new key
+
+Prepare the environment variables
 
 ```
-sudo rsync -rdgop --numeric-ids --checksum --exclude '*TLB' --exclude '*TDA' --exclude '*TBA' /mnt/tempts/c-db2oltp-1712862624337428-db2u/db2inst1/ /mnt/blumeta0/local-backup\
+export API_KEY="2wpXlj1rm69uZTjnvlQOqVFOJloQmK0D2PuoPHkV" 
+export CPD_USERNAME="l318711" 
+export LOCAL_USER="user_devme" 
+export CPD_PROFILE_NAME="prof_devme" 
+export CPD_PROFILE_URL="https://cpd-cp4data.apps.oc001b000004.dev.echonet"
 ```
 
-Confirm the folder structure within /mnt/blumeta0/local-backup:
+Configure the user
 
 ```
-ls -laR /mnt/blumeta0/local-backup
+cd /apps/cpdcli/cpd-cli-linux-SE-14.2.2-2727 ./cpd-cli config users
+set ${LOCAL_USER} --username ${CPD_USERNAME} --apikey ${API_KEY}
 ```
 
-Make sure the folder structure is:
+Configure the profile
 
 ```
- /mnt/blumeta0/local-backup/NODE000/*
+./cpd-cli config profiles set ${CPD_PROFILE_NAME} --user ${LOCAL_USER} --url ${CPD_PROFILE_URL}
 ```
 
-Once the folder structure is confirmed, proceed with the Db2 instance upgrade accordingly
-
-Prepare for the Db2 instance upgrade by obtaining a list of Db2 service instances:
-
-To obtain value for --profile run cat $HOME/.cpd-cli/config as root:
+Confirm the profile is working
 
 ```
-cpd-cli service-instance list \
---service-type=db2oltp \
---profile=${CPD_PROFILE_NAME}
+./cpd-cli service-instance list --profile=${CPD_PROFILE_NAME}
 ```
+
+
+### Upgrade the db2oltp service instance (est. 10 minutes)
 
 Set the INSTANCE_NAME to the name of the service instance:
 
@@ -1262,35 +1462,14 @@ Set the INSTANCE_NAME to the name of the service instance:
 export INSTANCE_NAME=<instance-name>
 ```
 
-Check whether your Db2 service instances are in running state:
-
-```
-cpd-cli service-instance status ${INSTANCE_NAME} \
---profile=${CPD_PROFILE_NAME} \
---service-type=db2oltp
-```
-
-**Before you upgrade Db2 instance, remove any taints in the Db2 node**
-
-Upgrade the db2oltp service instance (est. 10 minutes)
+Initiate the upgrade of db2oltp services instances
 
 ```
 cpd-cli service-instance upgrade \
 --service-type=db2oltp \
 --instance-name=${INSTANCE_NAME} \
---profile=${CPD_PROFILE_NAME}
-```
-
-If the Db2 instance upgrade starts looping, with error messages related to licensing, you may need to update the db2u-lic secret with the base64 encoded license key
-
-Update the db2u-lic secret with the new Db2 license:
-
-```
-oc get secret | grep db2u-lic
-```
-
-```
-oc edit secret db2u-lic
+--profile=${CPD_PROFILE_NAME} \
+--watch
 ```
 
 Verify the service instance upgrade by running the following command and waiting for the status to change to Ready:
@@ -1315,15 +1494,107 @@ cpd-cli service-instance list \
 --service-type=db2oltp
 ```
 
+**Potential issue during the upgrade of Db2 service instance related to Tempspace1**
+
+During the Db2 instance upgrade you may observe any issue with Tempspace1, "Table space access is not allowed." 
+
+This problem is related to the usage of local storage and results in missing files and missing folder structures within the Db2u pod. 
+
+As a workaround, you can run the following commands as db2inst1 before restarting the Db2u engine pod
+
+```
+oc exec -it c-db2oltp-1734440804666892-db2u-0 -n cp4data -- /bin/bash -c "su - db2inst1 -c \"sudo rsync -rdgop --numeric-ids --checksum --exclude '*TLB' --exclude
+'*TDA' --exclude '*TBA' /mnt/tempts/c-db2oltp-1734440804666892-db2u/db2inst1/ /mnt/blumeta0/local-backup\""
+```
+
+If TEMPSPACE1 has already disappeared, the DB2 database becomes inaccessible. (Error: SQL0290N Table space access is not allowed) See below for troubleshooting
+
+Start by transferring the SQLTAG.NAM file into the Db2 pod
+
+```
+oc cp SQLTAG.NAM c-db2oltp-1736767772824325-db2u-0:/tmp
+```
+
+Recreate the directory (Note: the SQLTAG.NAM file is located in /apps/bastion/install_files of bastion DEV ME)
+
+```
+cd /tmp
+chmod 777 SQLTAG.NAM
+su - db2inst1
+mkdir -p /mnt/tempts/systemp/db2inst1/NODE0000/BCEFDB/T0000001/C0000000.TMP
+```
+
+Copy the container tag and update permissions
+
+```
+cd /tmp
+cp SQLTAG.NAM /mnt/tempts/systemp/db2inst1/NODE0000/BCEFDB/T0000001/C0000000.TMP
+chmod 600 /mnt/tempts/systemp/db2inst1/NODE0000/BCEFDB/T0000001/C0000000.TMP/SQLTAG.NAM
+chown db2inst1:db2iadm1 /mnt/tempts/systemp/db2inst1/NODE0000/BCEFDB/T0000001/C0000000.TMP/SQLTAG.NAM
+```
+
+Restart and connect to Db2
+
+```
+db2 "restart db BCEFDB DROP PENDING TABLESPACES (TIMESPACE1)"
+db2 connect to BCEFDB
+db2
+```
+
+In the Db2 terminal run the following command
+
+```
+CREATE TEMPORARY TABLESPACE "TEMPSPACE2" IN DATABASE PARTITION GROUP IBMTEMPGROUP PAGESIZE 16384 MANAGED BY AUTOMATIC STORAGE USING STOGROUP "IBMDB2UTEMPSG1" EXTENTSIZE 4 PREFETCHSIZE AUTOMATIC BUFFERPOOL "IBMDEFAULTBP" OVERHEAD INHERIT TRANSFERRATE INHERIT FILE SYSTEM CACHING DROPPED TABLE RECOVERY OFF
+
+drop tablespace TEMPSPACE1
+
+quit
+```
+
+```
+cd /mnt/tempts/systemp/db2inst1/NODE0000/BCEFDB/ mv T0000001 T0000001.old
+db2
+```
+
+In the Db2 terminal run the following command
+
+```
+CREATE TEMPORARY TABLESPACE "TEMPSPACE1" IN DATABASE PARTITION GROUP IBMTEMPGROUP PAGESIZE 16384 MANAGED BY AUTOMATIC STORAGE USING STOGROUP "IBMDB2UTEMPSG1" EXTENTSIZE 4 PREFETCHSIZE AUTOMATIC BUFFERPOOL "IBMDEFAULTBP" OVERHEAD INHERIT TRANSFERRATE INHERIT FILE SYSTEM CACHING DROPPED TABLE RECOVERY OFF
+
+drop tablespace TIMESPACE2 
+
+quit
+```
+
+Verify the changes
+
+```
+db2 list tablespaces show detail
+```
+
+Check whether your Db2 service instances are in running state:
+
+```
+cpd-cli service-instance status ${INSTANCE_NAME} \
+--profile=${CPD_PROFILE_NAME} \
+--service-type=db2oltp
+```
+
 Continue with the upgrade of Data Gate custom resource
+
 
 ### Upgrade the Data Gate custom resource (est. 10 minutes):
 
-Complete the following tasks before you run the actual Data Gate upgrade:
+Complete the following tasks before you run the actual Data Gate upgrade
 
-1. [Activating the Db2 Connect Unlimited Edition license](https://www.ibm.com/docs/en/software-hub/5.2.x?topic=upgrade-activating-db2-connect-unlimited)
+
+### [Activating the Db2 Connect Unlimited Edition license](https://www.ibm.com/docs/en/software-hub/5.2.x?topic=upgrade-activating-db2-connect-unlimited)
 
 As a prerequisite for all upgrades, the license for your JDBC driver must be activated
+
+This step requires access to the DB2 Z database. It is probably necessary to request assistance from a DB2 DBA
+
+The next steps take place on the bastion node
 
 Check if the Db2 v12 license is already installed
 
@@ -1371,7 +1642,8 @@ Ddb2.jcc.override.sslClientHostnameValidation=off com.ibm.db2.jcc.DB2ConnectActi
 l318711 -password 93421011 -checkexisting
 ```
 
-2. [Cleaning up the data-gate-api container](https://www.ibm.com/docs/en/software-hub/5.2.x?topic=upgrade-cleaning-up-data-gate-api)
+
+### [Cleaning up the data-gate-api container](https://www.ibm.com/docs/en/software-hub/5.2.x?topic=upgrade-cleaning-up-data-gate-api)
 
 Remote into the dg Open a shell in the data-gate-api container of the Data Gate pod
 
@@ -1396,7 +1668,8 @@ rm -rf /head/clone-api/work/jetty-0_0_0_0-8188-clone-api_war-_clone_system-any-/
 
 Exit the container shell and proceed with the upgrade
 
-Upgrade the custom resource for Data Gate:
+
+### Upgrade the custom resource for Data Gate
 
 ```
 cpd-cli manage apply-cr \
@@ -1422,13 +1695,15 @@ cpd-cli manage get-cr-status \
 --components=datagate
 ```
 
-**Potential issue during the upgrade of Data Gate service instances**
+**Important: Potential issue during the upgrade of Data Gate service instances**
 
-During Data Gate instance upgrade a dg-1750101262664465-backup-head-job pod runs, but it should be scheduled to any node where Db2 is not running. For this, you can cordon the node hosting Db2, and after the backup-head-job pod is completed, uncordon the same node
+During Data Gate instance upgrade a dg-1750101262664465-backup-head-job pod runs, but it should be scheduled to any node where Db2 is not running
+
+For this, you can cordon the node hosting Db2, and after the backup-head-job pod is completed, you can uncordon the same node
 
 ### Upgrade the Data Gate service instances (est. 18 minutes):
 
-**Potential issue after the upgrade of Data Gate service instances**
+**Important: Potential issue after the upgrade of Data Gate service instances**
 
 After Data Gate instances have been upgraded, it is possible that the configuration settings of the Db2 target database are not correctly migrated during the upgrade
 
@@ -1481,10 +1756,9 @@ DB2COMM=TCPIP,SSL
 
 You can also [change configuration settings](https://www.ibm.com/docs/en/software-hub/5.2.x?topic=configuration-changing-db2-settings) after you deploy your instance
 
-Before you proceed, make sure the CPD profile is set up:
+Before you proceed, make sure the CPD profile is set up
 
--   [Creating a profile to use the cpd-cli management
-    commands](https://www.ibm.com/docs/en/software-hub/5.1.x?topic=cli-creating-cpd-profile)
+### [Creating a profile to use the cpd-cli management commands](https://www.ibm.com/docs/en/software-hub/5.1.x?topic=cli-creating-cpd-profile)
 
 ```
 cpd-cli service-instance upgrade \
@@ -1508,6 +1782,49 @@ Run the following command and see if the Provision status has changed to UPGRADE
 watch cpd-cli service-instance list --profile=${CPD_PROFILE_NAME} --service-type dg
 ```
 
+### Post Data Gate Upgrade
+
+Run the utility to refresh dg certificates
+
+Find the Data Gate pod
+
+```
+oc get po|grep data-gate
+```
+
+Remote into the Data Gate pod
+
+```
+oc exec -it dg-1737478278318519-data-gate-989b845b7-mtpkh -c data-gate-server /bin/bash
+```
+
+Run the refresh-dg-certificate-using-new-cp4d-certificate.sh utility
+
+```
+/opt/ibm/dwa/bin/migration/refresh-dg-certificate-using-new-cp4d-certificate.sh
+```
+
+Exit the session
+
+```
+exit
+```
+Restart the Data Gate pod
+
+**Important: Potential issue -> If the Data Gate pod is stuck at 4/5, there is a problem, follow the proedure**
+
+Open a shell in the datagate-api container and run the following commands
+
+```
+rm -rf /head/clone-api/work/jetty-0_0_0_0-8188-clone-api_war-_clone_system-any-/webapp/*
+touch /head/.UPGRADE_INSTANCE
+```
+Restart the Data Gate pod
+
+If a pod remains in the creating state, there is a problem, follow the procedure 
+
+21.14.1.0 CP4D Troubleshooting update problems - MDP - MD15B - Confluence (group.echonet)
+
 
 ### Upgrade the Db2 Data Management Console custom resource (est. 10 minutes):
 
@@ -1517,7 +1834,8 @@ Log the cpd-cli in to the Red Hat® OpenShift® Container Platform cluster:
 ${CPDM_OC_LOGIN}
 ```
 
-Update the custom resource for Db2:
+
+### Update the custom resource for Dmc (est. 5 minutes):
 
 ```
 cpd-cli manage apply-cr \
@@ -1537,10 +1855,10 @@ cpd-cli manage get-cr-status \
 --components=dmc
 ```
 
-You can also monitor the status of the Db2 upgrade with the following command:
+You can also monitor the status of the Dmc upgrade with the following command:
 
 ```
-oc get db2oltpservice.databases.cpd.ibm.com -n cp4data -o yaml
+oc get Dmcaddon dmc-addon -n cp4data -o yaml
 ```
 
 DMC is upgraded when the apply-cr command returns:
@@ -1549,9 +1867,28 @@ DMC is upgraded when the apply-cr command returns:
 [SUCCESS]... The apply-cr command ran successfully
 ```
 
-### Complete the catalog-api service migration:
 
-After you upgrade the common core services to IBM® Software Hub Version 5.2, the back-end database for the catalog-api service is migrated from CouchDB to PostgreSQL
+### Restart Data Gate synchronization
+
+From the CP4D UI, re-enable Data Gate synchronization
+
+### Uncomment the sync check
+
+On the GRAFANA server (primary and secondary)
+
+```
+crontab -e
+```
+
+The line to uncomment is
+
+```
+* * * * * /storage/datagatesupervision/automation_status.sh
+```
+
+## 8. Completing the catalog-api service migration:
+
+After you upgrade the common core services to IBM Software Hub Version 5.2, the back-end database for the catalog-api service is migrated from CouchDB to PostgreSQL
 
 1. Checking the migration method used
 
@@ -1664,7 +2001,8 @@ Save the following script on the client workstation as a file named migration_st
 ```
 #!/bin/bash
 
-# Set postgres connection parameters
+### Set postgres connection parameters
+
 postgres_password=$(oc get secret -n ${PROJECT_CPD_INST_OPERANDS} ccs-cams-postgres-app -o json 2>/dev/null | jq -r '.data."password"' | base64 -d)
 postgres_username=cams_user
 postgres_db=camsdb
@@ -1672,7 +2010,8 @@ postgres_migrationdb=camsdb_migration
 
 echo -e "======MIGRATION STATUS==========="
 
-# Total migrated database(s)
+### Total migrated database(s)
+
 databases=$(oc -n ${PROJECT_CPD_INST_OPERANDS} -c postgres exec ccs-cams-postgres-1 -- psql -t postgresql://$postgres_username:$postgres_password@localhost:5432/$postgres_migrationdb -c "select count(*) from migration.status where state='complete'" 2>/dev/null)
 if [ -n "$databases" ];then
   databases_no_space=$(echo "$databases" | tr -d ' ')
@@ -1681,7 +2020,8 @@ else
   echo "Unable to fetch migration information for databases"
 fi
 
-# Total migrated assets
+### Total migrated assets
+
 assets=$(oc -n ${PROJECT_CPD_INST_OPERANDS} -c postgres exec ccs-cams-postgres-1 -- psql -t postgresql://$postgres_username:$postgres_password@localhost:5432/$postgres_db -c "select count(*) from cams.asset" 2>/dev/null)
 if [ -n "$assets" ];then
   assets_no_space=$(echo "$assets" | tr -d ' ')
@@ -1709,7 +2049,8 @@ Save the following script on the client workstation as a file named backup_postg
 ```
 #!/bin/bash
 
-# Make sure PROJECT_CPD_INST_OPERANDS is set
+### Make sure PROJECT_CPD_INST_OPERANDS is set
+
 if [ -z "$PROJECT_CPD_INST_OPERANDS" ]; then
   echo "Environment variable PROJECT_CPD_INST_OPERANDS is not defined. This environment variable must be set to the project where IBM Software Hub is running."
   exit 1
@@ -1717,7 +2058,8 @@ fi
 
 echo "PROJECT_CPD_INST_OPERANDS namespace is: $PROJECT_CPD_INST_OPERANDS"
 
-# Step 1: Find the replica pod
+### Step 1: Find the replica pod
+
 REPLICA_POD=$(oc get pods -n $PROJECT_CPD_INST_OPERANDS -l app=ccs-cams-postgres -o jsonpath='{range .items[?(@.metadata.labels.role=="replica")]}{.metadata.name}{"\n"}{end}')
 
 if [ -z "$REPLICA_POD" ]; then
@@ -1727,7 +2069,8 @@ fi
 
 echo "Replica pod: $REPLICA_POD"
 
-# Step 2: Extract JDBC URI from a secret
+### Step 2: Extract JDBC URI from a secret
+
 JDBC_URI=$(oc get secret ccs-cams-postgres-app -n $PROJECT_CPD_INST_OPERANDS -o jsonpath="{.data.uri}" | base64 -d)
 
 if [ -z "$JDBC_URI" ]; then
@@ -1735,10 +2078,12 @@ if [ -z "$JDBC_URI" ]; then
   exit 1
 fi
 
-#  Set path on the pod to save the dump file 
+###  Set path on the pod to save the dump file 
+
 TARGET_PATH="/var/lib/postgresql/data/forpgdump"
 
-# Step 3: Run pg_dump with nohup inside the pod
+### Step 3: Run pg_dump with nohup inside the pod
+
 oc exec "$REPLICA_POD" -n $PROJECT_CPD_INST_OPERANDS -- bash -c "
   TARGET_PATH=\"$TARGET_PATH\"
   JDBC_URI=\"$JDBC_URI\"
@@ -1793,7 +2138,7 @@ Option 2 - Complete	-> The backup is complete when the script writes the followi
 
 Option 3 - Failed -> If the backup fails, the pgdump.log file will include error messages. If the backup fails, contact IBM Support. Append the pgdump.log file to your support case.
 
-***Do not proceed to the next step unless the backup is complete***
+**Do not proceed to the next step unless the backup is complete**
 
 Set the POSTGRES_BACKUP_STORAGE_LOCATION environment variable to the location where you want to store the backup:
 
@@ -1854,7 +2199,6 @@ Open a Bash prompt in the pod:
 ```
 oc exec ${CAT_API_JOBS_POD} -n ${PROJECT_CPD_INST_OPERANDS} -it -- bash 
 ```
-
 
 Run the following command to set the AUTH_TOKEN environment variable:
 
@@ -1930,8 +2274,6 @@ If the preceding commands returned empty responses, wait 10 minutes before check
 
 **Important: When carrying out the Completing the catalog-api service migration process, you may encounter [issues when consolidating the PostgreSQL database, Step 6](https://www.ibm.com/mysupport/s/defect/aCIgJ0000005J6r/dt450745?language=en_US). Please be aware that you may not receive all the information you need about the completion of the consolidation, and that you may not know if the process was completed successfully**
 
-
-
 7. What to do if the consolidation completed successfully
 
 If the PostgreSQL database consolidation was successful, wait several weeks to confirm that the projects, catalogs, and spaces in your environment are working as expected.
@@ -1977,37 +2319,22 @@ oc delete pvc cams-postgres-migration-pvc \
 -n ${PROJECT_CPD_INST_OPERANDS}
 ```
 
-***This marks the completion of the catalog-api service migration***
+**This marks the completion of the catalog-api service migration**
 
+## 9. Potential Issues To Be Aware Of
 
-## 9. All Potential Issues
+1. If the Db2 license is not upgraded to the compatible version you may run into issues during Db2 instance upgrade. Follow the steps to "[Upgrade the license before you deploy Db2](https://www.ibm.com/docs/en/software-hub/5.2.x?topic=setup-upgrading-license-before-you-deploy-db2)"
 
-1. Setup-instance command will fail with 'imagepullbackoff' errors if the storage test images are missing. Mirror the storage test images ahead of time or exclude the '--run_storage_tests' flag
+2. During the Db2 instance upgrade, the Db2ckupgrade.sh utility runs a job that must be scheduled to the same node as the Db2 engine pod. To prevent any issues, you can restrict the job to run on the same node as the engine pod. Use a cordon, to ensure that this job is scheduled to the node hosting Db2.
 
-2. For imagepullbackoff errors, ensure that all required images are mirrored to the private registry, for example:
+3. During the Db2 instance upgrade you may observe issues related to Tempspace1, "Table space access is not allowed." This problem is related to the usage of local storage and results in missing files and missing folder structures within the Db2 pod. To address this, if Db2u pod has not restarted yet, you can run a workaround command or if Db2u pod has restarted already, you will need to create a specific directory structure inside the Db2u pod and copy the container tag to this location.
 
-```
-skopeo copy docker://icr.io/cpopen/ibm-operator-catalog@sha256:01712920b400fba751f60c71c27fbd64ca1b59b6cd325c42ae691f0b8770133d docker://lpdza532.phx.aexp.com:5000/cpopen/ibm-operator-catalog@sha256:01712920b400fba751f60c71c27fbd64ca1b59b6cd325c42ae691f0b8770133d \--all \--remove-signatures \--authfile=/var/registry/oc4.7/installer/pullsecret/merged_pullsecret.json
-```
+4. After Data Gate instances have been upgraded, it is possible that the configuration settings of the Db2 target database are not correctly migrated during the upgrade. Missing Db2 configuration settings can cause a variety of issues, in which the DB2COMM=TCPIP,SSL was missing. To resolve this, we had to add the missing Db2 setting by using 'db2set DB2COMM=TCPIP,SSL'. These configurations should persist through a Db2u pod recycle. Keep track of your Db2 configuration settings prior to upgrading to ensure you have a list of settings which you can restore. You can also [change configuration settings](https://www.ibm.com/docs/en/software-hub/5.2.x?topic=configuration-changing-db2-settings) after you deploy your instance
 
-```
-skopeo copy docker://icr.io/cpopen/cpd/olm-utils-v3@sha256:5a5b9b563756b3a41b22b2c9b6e940d3ceed6e12100e351809eb7f09ed058905 docker://lppza417.gso.aexp.com:5000/cpopen/cpd/olm-utils-v3@sha256:5a5b9b563756b3a41b22b2c9b6e940d3ceed6e12100e351809eb7f09ed058905 --all --remove-signatures --authfile=/root/merged_pullsecret.json
-```
+This marks the end of the upgrade of IBM Software Hub, Db2oltp, Datagate, and Db2 Data Management Console
 
-3. For insufficient CPU, insufficient memory, untolerated taint issues, ensure there are enough resources available on the cluster. Perform a pre-upgrade health check to ensure the cluster is in a healthy state prior to the upgrade
+## 10. Validate CPD upgrade 
 
-4. If the Db2 license is not upgraded to the compatible version you may run into issues during Db2 instance upgrade. Follow the steps to "[Upgrade the license before you deploy Db2](https://www.ibm.com/docs/en/software-hub/5.2.x?topic=setup-upgrading-license-before-you-deploy-db2)"
-
-5. During the Db2 instance upgrade, the Db2ckupgrade.sh utility runs a job that must be scheduled to the same node as the Db2 engine pod. To resolve this issue, restrict the job to run on the same node as the engine pod. Use a cordon, to ensure that this job is scheduled to the node hosting Db2. 
-
-6. During the Db2 instance upgrade you may observe issues related to Tempspace1, "Table space access is not allowed." This problem is related to the usage of local storage and results in missing files and missing folder structures within the Db2 pod. To address this, you will need to create a specific directory structure inside the Db2u pod and copy the container tag to this location.
-
-7. During Data Gate instance upgrade a dg-1750101262664465-backup-head-job pod runs, but it should be scheduled to any node where Db2 is not running. For this, cordon the node hosting Db2, and after the backup-head-job pod is completed, uncordon the same node
-
-8. After Data Gate instances have been upgraded, it is possible that the configuration settings of the Db2 target database are not correctly migrated during the upgrade. Missing Db2 configuration settings can cause a variety of issues, in which the DB2COMM=TCPIP,SSL was missing. To resolve this, we had to add the missing Db2 setting by using 'db2set DB2COMM=TCPIP,SSL'. These configurations should persist through a Db2u pod recycle. Keep track of your Db2 configuration settings prior to upgrading to ensure you have a list of settings which you can restore. You can also [change configuration settings](https://www.ibm.com/docs/en/software-hub/5.2.x?topic=configuration-changing-db2-settings) after you deploy your instance
-
-This marks the end of the installation of IBM Software Hub, Db2oltp, Datagate, and Db2 Data Management Console
-
-## 10. Validate CPD upgrade (customer acceptance test)
+Perform final technical and functional checks
 
 End of document
