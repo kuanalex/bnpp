@@ -944,8 +944,6 @@ Run the set volume command
 
 ```
 oc set volume statefulset/c-db2oltp-1736767772824325-db2u -n cp4data --remove --name=db2u-entrypoint-sh
-
-oc set volume statefulset/c-db2oltp-1764799139398922-db2u -n cp4data --remove --name=db2u-entrypoint-sh
 ```
 
 If you see this error message, you can proceed normally
