@@ -1435,14 +1435,19 @@ export CPD_PROFILE_URL="https://cpd-cp4data.apps.oc001b000004.dev.echonet"
 Configure the user
 
 ```
-cd /apps/cpdcli/cpd-cli-linux-SE-14.2.2-2727 ./cpd-cli config users
-set ${LOCAL_USER} --username ${CPD_USERNAME} --apikey ${API_KEY}
+cd /apps/cpdcli/cpd-cli-linux-SE-14.2.2-2727
+```
+
+```
+./cpd-cli config users set ${LOCAL_USER} --username ${CPD_USERNAME} --apikey ${API_KEY}
 ```
 
 Configure the profile
 
 ```
-./cpd-cli config profiles set ${CPD_PROFILE_NAME} --user ${LOCAL_USER} --url ${CPD_PROFILE_URL}
+cpd-cli config profiles set ${CPD_PROFILE_NAME} \
+--user ${LOCAL_USER} \
+--url ${CPD_PROFILE_URL}
 ```
 
 Confirm the profile is working
