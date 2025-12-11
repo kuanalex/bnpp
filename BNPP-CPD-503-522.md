@@ -1656,6 +1656,7 @@ Identify the Data Gate pod
 dg-1737478278318519-data-gate-f4fff8f58-rp72p
 ```
 
+```
 oc exec -it -c data-gate-api dg-1737478278318519-data-gate-f4fff8f58-rp72p -- bash
 ```
 
