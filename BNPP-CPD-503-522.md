@@ -1531,8 +1531,17 @@ Copy the container tag and update permissions
 
 ```
 cd /tmp
+```
+
+```
 cp SQLTAG.NAM /mnt/tempts/systemp/db2inst1/NODE0000/BCEFDB/T0000001/C0000000.TMP
+```
+
+```
 chmod 600 /mnt/tempts/systemp/db2inst1/NODE0000/BCEFDB/T0000001/C0000000.TMP/SQLTAG.NAM
+```
+
+```
 chown db2inst1:db2iadm1 /mnt/tempts/systemp/db2inst1/NODE0000/BCEFDB/T0000001/C0000000.TMP/SQLTAG.NAM
 ```
 
@@ -1540,7 +1549,13 @@ Restart and connect to Db2
 
 ```
 db2 "restart db BCEFDB DROP PENDING TABLESPACES (TIMESPACE1)"
+```
+
+```
 db2 connect to BCEFDB
+```
+
+```
 db2
 ```
 
