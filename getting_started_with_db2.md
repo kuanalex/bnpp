@@ -1,6 +1,6 @@
 # Getting Started with Db2
 
-This document contains basic Db2 commands to help you create tables, insert mock data, query data, and explore your database.
+This document contains basic Db2 commands to help you create tables, insert mock data, query data, and explore your database. It also includes some Db2 environment configuration commands using `db2set`.
 
 ---
 
@@ -90,4 +90,53 @@ db2 "CREATE INDEX idx_emp_lastname ON employees(last_name)"
 ```bash
 db2 "DROP TABLE employees"
 ```
+
+---
+
+## 16. Db2 Environment Configuration with `db2set`
+`db2set` is used to configure Db2 registry variables, which control the behavior of the Db2 instance or client. These settings can affect performance, logging, or SQL compatibility.
+
+### Common `db2set` commands
+
+**View all Db2 registry variables:**
+```bash
+db2set -all
+```
+
+**Set a registry variable for the current instance:**
+```bash
+db2set DB2_COMPATIBILITY_VECTOR=ORA
+```
+This enables Oracle compatibility mode, useful when migrating from Oracle to Db2.
+
+**Unset a registry variable:**
+```bash
+db2set DB2_COMPATIBILITY_VECTOR=
+```
+
+**Save registry changes:**
+```bash
+db2stop
+```
+```bash
+db2start
+```
+Some registry variable changes require stopping and restarting the instance.
+
+### Use-cases for `db2set`
+- **Enabling Oracle SQL compatibility**: Set `DB2_COMPATIBILITY_VECTOR=ORA` to allow certain Oracle SQL syntax.
+- **Controlling logging behavior**: Variables like `DB2LOGPATH` can redirect logs to a specific directory.
+- **Performance tuning**: Variables such as `DB2_NUM_IOCLEANERS` or `DB2_MAX_AGENT_CFG` help tune instance behavior.
+- **Debugging or troubleshooting**: Enable trace or verbose output using registry variables.
+
+### Example scenario
+```bash
+# Enable Oracle compatibility mode
+db2set DB2_COMPATIBILITY_VECTOR=ORA
+
+# Stop and start the instance to apply
+db2stop
+/db2start
+```
+This allows SQL scripts originally written for Oracle to run with minimal changes on Db2.
 
