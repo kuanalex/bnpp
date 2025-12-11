@@ -34,9 +34,8 @@ Upgrade flow and steps
 5. Prepare to upgrade an instance of IBM Software Hub
 6. Upgrade an instance of IBM Software Hub
 7. Upgrade CPD services (db2oltp,datagate,dmc)
-8. Completing the catalog-api service migration
-9. Potential Issues To Be Aware Of
-10. Validate CPD upgrade (customer acceptance test)
+8. Potential Issues To Be Aware Of
+9. Validate CPD upgrade (customer acceptance test)
 ```
 
 
@@ -944,6 +943,8 @@ Run the set volume command
 
 ```
 oc set volume statefulset/c-db2oltp-1736767772824325-db2u -n cp4data --remove --name=db2u-entrypoint-sh
+
+oc set volume statefulset/c-db2oltp-1764799139398922-db2u -n cp4data --remove --name=db2u-entrypoint-sh
 ```
 
 If you see this error message, you can proceed normally
@@ -1435,25 +1436,20 @@ export CPD_PROFILE_URL="https://cpd-cp4data.apps.oc001b000004.dev.echonet"
 Configure the user
 
 ```
-cd /apps/cpdcli/cpd-cli-linux-SE-14.2.2-2727
-```
-
-```
-cpd-cli config users set ${LOCAL_USER} --username ${CPD_USERNAME} --apikey ${API_KEY}
+cd /apps/cpdcli/cpd-cli-linux-SE-14.2.2-2727 ./cpd-cli config users
+set ${LOCAL_USER} --username ${CPD_USERNAME} --apikey ${API_KEY}
 ```
 
 Configure the profile
 
 ```
-cpd-cli config profiles set ${CPD_PROFILE_NAME} \
---user ${LOCAL_USER} \
---url ${CPD_PROFILE_URL}
+./cpd-cli config profiles set ${CPD_PROFILE_NAME} --user ${LOCAL_USER} --url ${CPD_PROFILE_URL}
 ```
 
 Confirm the profile is working
 
 ```
-cpd-cli service-instance list --profile=${CPD_PROFILE_NAME}
+./cpd-cli service-instance list --profile=${CPD_PROFILE_NAME}
 ```
 
 
@@ -1531,17 +1527,8 @@ Copy the container tag and update permissions
 
 ```
 cd /tmp
-```
-
-```
 cp SQLTAG.NAM /mnt/tempts/systemp/db2inst1/NODE0000/BCEFDB/T0000001/C0000000.TMP
-```
-
-```
 chmod 600 /mnt/tempts/systemp/db2inst1/NODE0000/BCEFDB/T0000001/C0000000.TMP/SQLTAG.NAM
-```
-
-```
 chown db2inst1:db2iadm1 /mnt/tempts/systemp/db2inst1/NODE0000/BCEFDB/T0000001/C0000000.TMP/SQLTAG.NAM
 ```
 
@@ -1549,13 +1536,7 @@ Restart and connect to Db2
 
 ```
 db2 "restart db BCEFDB DROP PENDING TABLESPACES (TIMESPACE1)"
-```
-
-```
 db2 connect to BCEFDB
-```
-
-```
 db2
 ```
 
@@ -1675,7 +1656,6 @@ Identify the Data Gate pod
 dg-1737478278318519-data-gate-f4fff8f58-rp72p
 ```
 
-```
 oc exec -it -c data-gate-api dg-1737478278318519-data-gate-f4fff8f58-rp72p -- bash
 ```
 
@@ -1776,6 +1756,8 @@ DB2COMM=TCPIP,SSL
 You can also [change configuration settings](https://www.ibm.com/docs/en/software-hub/5.2.x?topic=configuration-changing-db2-settings) after you deploy your instance
 
 Before you proceed, make sure the CPD profile is set up
+
+### [Creating a profile to use the cpd-cli management commands](https://www.ibm.com/docs/en/software-hub/5.1.x?topic=cli-creating-cpd-profile)
 
 ```
 cpd-cli service-instance upgrade \
@@ -1903,442 +1885,8 @@ The line to uncomment is
 * * * * * /storage/datagatesupervision/automation_status.sh
 ```
 
-## 8. Completing the catalog-api service migration:
 
-After you upgrade the common core services to IBM Software Hub Version 5.2, the back-end database for the catalog-api service is migrated from CouchDB to PostgreSQL
-
-1. Checking the migration method used
-
-If you ran an automatic migration, the common core services waits for the migration jobs to complete before upgrading the components associated with the common core services
-
-If you ran a semi-automatic migration, the common core services runs the migration jobs while upgrading the components associated with the common core services
-
-Run the following command to determine which migration method was used:
-
-```
-oc describe ccs ccs-cr \
---namespace ${PROJECT_CPD_INST_OPERANDS} \
-| grep use_semi_auto_catalog_api_migration
-```
-
-Take the appropriate action based on the response returned by the oc describe command:
-
-The command returns an empty response:
-```
-Automatic -> Proceed to 4. Collecting statistics about the migration
-```
-
-The command returns true:
-```
-Semi-automatic	-> Proceed to 2. Checking the status of the migration jobs.
-```
-
-
-2. Checking the status of the migration jobs
-
-This step is required only for semi-automatic migrations. If you completed an automatic migration, proceed to 4. Collecting statistics about the migration
-
-Check the migration status periodically. The following jobs might take some time to complete depending on number of assets to be migrated:
--cams-postgres-migration-job
--jobs-postgres-upgrade-migration
-
-To check the status of the jobs:
-
-```
-oc get job cams-postgres-migration-job jobs-postgres-upgrade-migration \
---namespace ${PROJECT_CPD_INST_OPERANDS} \
--o custom-columns=NAME:.metadata.name,STATUS:.status.conditions[0].type,COMPLETIONS:.status.succeeded
-```
-
-The command returns output with the following format:
-
-```
-NAME                             STATUS    COMPLETIONS
-cams-postgres-migration-job      Complete   1/1       
-jobs-postgres-upgrade-migration  Complete   1/1      
-```
-
-Take the appropriate action based on the status of the jobs:
-
-Option 1 - The status of either job is Failed -> Contact IBM Support for assistance resolving the error
-
-Option 2 - The status of either job is InProgress -> Wait several minutes before checking the status of the jobs again
-
-Option 3 - The status of both jobs is Complete -> Proceed to 3. Completing the migration
-
-
-3. Completing the migration
-
-This step is required only for semi-automatic migrations. If you completed an automatic migration, proceed to 4. Collecting statistics about the migration.
-
-After both of the following jobs complete, you can complete the migration to PostgreSQL:
--cams-postgres-migration-job
--jobs-postgres-upgrade-migration
-
-To complete the migration to PostgreSQL:
-
-Run the following command to continue the semi-automatic migration:
-
-```
-oc patch ccs ccs-cr \
---namespace ${PROJECT_CPD_INST_OPERANDS} \
---type merge \
---patch '{"spec": {"continue_semi_auto_catalog_api_migration": true}}'
-```
-
-Wait for common core services custom resource to be Completed. This process takes at least 10 minutes. However, it might be significantly longer if any assets were changed during the common core services upgrade.
-
-To check the status of the custom resource, run:
-
-```
-oc get ccs ccs-cr \
---namespace ${PROJECT_CPD_INST_OPERANDS}
-```
-
-The command returns output with the following format:
-
-```
-NAME     VERSION   RECONCILED   STATUS      PERCENT   AGE
-ccs-cr   11.0.0    11.0.0       Completed   100%      1d
-```
-
-Take the appropriate action based on the status of the jobs:
-
-Option 1 - The status of either job is Failed -> Contact IBM Support for assistance resolving the error
-
-Option 2 - The status of either job is InProgress -> WWait several minutes before checking the status of the custom resource again
-
-Option 3 - The status of both jobs is Complete -> 	Proceed to 4. Collecting statistics about the migration
-
-
-4. Collecting statistics about the migration
-
-Save the following script on the client workstation as a file named migration_status.sh:
-
-```
-#!/bin/bash
-
-### Set postgres connection parameters
-
-postgres_password=$(oc get secret -n ${PROJECT_CPD_INST_OPERANDS} ccs-cams-postgres-app -o json 2>/dev/null | jq -r '.data."password"' | base64 -d)
-postgres_username=cams_user
-postgres_db=camsdb
-postgres_migrationdb=camsdb_migration
-
-echo -e "======MIGRATION STATUS==========="
-
-### Total migrated database(s)
-
-databases=$(oc -n ${PROJECT_CPD_INST_OPERANDS} -c postgres exec ccs-cams-postgres-1 -- psql -t postgresql://$postgres_username:$postgres_password@localhost:5432/$postgres_migrationdb -c "select count(*) from migration.status where state='complete'" 2>/dev/null)
-if [ -n "$databases" ];then
-  databases_no_space=$(echo "$databases" | tr -d ' ')
-  echo "Total catalog-api databases migrated: $databases_no_space"
-else
-  echo "Unable to fetch migration information for databases"
-fi
-
-### Total migrated assets
-
-assets=$(oc -n ${PROJECT_CPD_INST_OPERANDS} -c postgres exec ccs-cams-postgres-1 -- psql -t postgresql://$postgres_username:$postgres_password@localhost:5432/$postgres_db -c "select count(*) from cams.asset" 2>/dev/null)
-if [ -n "$assets" ];then
-  assets_no_space=$(echo "$assets" | tr -d ' ')
-  echo -e "Total catalog-api assets migrated: $assets_no_space\n"
-else
-  echo "Unable to fetch migration information for assets"
-fi
-```
-
-Run the migration_status.sh script:
-
-```
-./migration_status.sh
-```
-
-Proceed to step 5. Backing up the PostgreSQL database
-
-
-5. Backing up the PostgreSQL database
-
-Back up the new PostgreSQL database
-
-Save the following script on the client workstation as a file named backup_postgres.sh:
-
-```
-#!/bin/bash
-
-### Make sure PROJECT_CPD_INST_OPERANDS is set
-
-if [ -z "$PROJECT_CPD_INST_OPERANDS" ]; then
-  echo "Environment variable PROJECT_CPD_INST_OPERANDS is not defined. This environment variable must be set to the project where IBM Software Hub is running."
-  exit 1
-fi
-
-echo "PROJECT_CPD_INST_OPERANDS namespace is: $PROJECT_CPD_INST_OPERANDS"
-
-### Step 1: Find the replica pod
-
-REPLICA_POD=$(oc get pods -n $PROJECT_CPD_INST_OPERANDS -l app=ccs-cams-postgres -o jsonpath='{range .items[?(@.metadata.labels.role=="replica")]}{.metadata.name}{"\n"}{end}')
-
-if [ -z "$REPLICA_POD" ]; then
-  echo "No replica pod found."
-  exit 1
-fi
-
-echo "Replica pod: $REPLICA_POD"
-
-### Step 2: Extract JDBC URI from a secret
-
-JDBC_URI=$(oc get secret ccs-cams-postgres-app -n $PROJECT_CPD_INST_OPERANDS -o jsonpath="{.data.uri}" | base64 -d)
-
-if [ -z "$JDBC_URI" ]; then
-  echo "JDBC URI not found in secret."
-  exit 1
-fi
-
-###  Set path on the pod to save the dump file 
-
-TARGET_PATH="/var/lib/postgresql/data/forpgdump"
-
-### Step 3: Run pg_dump with nohup inside the pod
-
-oc exec "$REPLICA_POD" -n $PROJECT_CPD_INST_OPERANDS -- bash -c "
-  TARGET_PATH=\"$TARGET_PATH\"
-  JDBC_URI=\"$JDBC_URI\"
-  echo \"TARGET_PATH is $TARGET_PATH\"
-  mkdir -p $TARGET_PATH &&
-  chmod 777 $TARGET_PATH &&
-  nohup bash -c '
-    pg_dump $JDBC_URI -Fc -f $TARGET_PATH/cams_backup.dump > $TARGET_PATH/pgdump.log 2>&1 &&
-    echo \"Backup succeeded. Please copy $TARGET_PATH/cams_backup.dump file from this pod to a safe place and delete it on this pod to save space.\" >> $TARGET_PATH/pgdump.log
-  ' &
-  echo \"pg_dump started in background. Logs: $TARGET_PATH/pgdump.log\"
-"
-```
-
-Run the backup_postgres.sh script:
-
-```
-./backup_postgres.sh
-```
-
-The script starts the backup in a separate terminal session
-
-Set the REPLICA_POD environment variable:
-
-```
-REPLICA_POD=$(oc get pods -n ${PROJECT_CPD_INST_OPERANDS} -l app=ccs-cams-postgres -o jsonpath='{range .items[?(@.metadata.labels.role=="replica")]}{.metadata.name}{"\n"}{end}')
-```
-
-Open a remote shell in the replica pod:
-
-```
-oc rsh ${REPLICA_POD}
-```
-
-Change to the /var/lib/postgresql/data/forpgdump/ directory:
-
-```
-cd /var/lib/postgresql/data/forpgdump/
-```
-
-Run the following command to monitor the list of files in the directory:
-
-```
-ls -lat
-```
-
-Wait for the backup to complete. (This process can take several hours if the database is large.)
-
-Option 1 - In progress	-> During the backup, the size of the pgdump.log file increases.
-
-Option 2 - Complete	-> The backup is complete when the script writes the following message to the pgdump.log file: Backup succeeded. Please copy /var/lib/postgresql/data/forpgdump/cams_backup.dump file from this pod to a safe place and delete it on this pod to save space.
-
-Option 3 - Failed -> If the backup fails, the pgdump.log file will include error messages. If the backup fails, contact IBM Support. Append the pgdump.log file to your support case.
-
-**Do not proceed to the next step unless the backup is complete**
-
-Set the POSTGRES_BACKUP_STORAGE_LOCATION environment variable to the location where you want to store the backup:
-
-```
-export POSTGRES_BACKUP_STORAGE_LOCATION=<directory>
-```
-
-***Important: Ensure that you choose a location where the file will not be accidentally deleted***
-
-Copy the backup to the POSTGRES_BACKUP_STORAGE_LOCATION:
-
-```
-oc cp ${REPLICA_POD}:/var/lib/postgresql/data/forpgdump/cams_backup.dump \
-$POSTGRES_BACKUP_STORAGE_LOCATION/cams_backup.dump
-```
-
-Delete the backup from the replica pod:
-
-```
-oc rsh $REPLICA_POD rm -f /var/lib/postgresql/data/forpgdump/cams_backup.dump
-```
-
-Proceed to step 6. Consolidating the PostgreSQL database
-
-
-6. Consolidating the PostgreSQL database
-
-After you back up the new PostgreSQL database, you must consolidate all of the existing copies of identical data across governed catalogs into a single record so that all identical data assets share a set of common properties
-
-Set the INSTANCE_URL environment variable to the URL of IBM Software Hub:
-
-```
-export INSTANCE_URL=https://<URL>
-```
-
-Tip: To get the URL of the web client, run the following command:
-
-```
-cpd-cli manage get-cpd-instance-details \
---cpd_instance_ns=${PROJECT_CPD_INST_OPERANDS}
-```
-
-Get the name of a catalog-api-jobs pod:
-
-```
-oc get pods -n ${PROJECT_CPD_INST_OPERANDS} \
-| grep catalog-api-jobs
-```
-
-Set the CAT_API_JOBS_POD environment variable to the name a pod returned by the preceding command:
-
-```
-export CAT_API_JOBS_POD=<pod-name>
-```
-
-Open a Bash prompt in the pod:
-
-```
-oc exec ${CAT_API_JOBS_POD} -n ${PROJECT_CPD_INST_OPERANDS} -it -- bash 
-```
-
-Run the following command to set the AUTH_TOKEN environment variable:
-
-```
-AUTH_TOKEN=$(cat /etc/.secrets/wkc/service_id_credential)
-```
-
-Start the consolidation:
-
-```
-curl -k -X PUT "${INSTANCE_URL}/v2/shared_assets/initialize_content?bss_account_id=999" \
-     -H "Authorization: Basic $AUTH_TOKEN"
-```
-
-The command returns a transaction ID
-
-***Important: Save the transaction ID so that you can refer to it later for debugging, if needed***
-
-Get the name of a catalog-api pod:
-
-```
-oc get pods \
--n ${PROJECT_CPD_INST_OPERANDS} \
-| grep catalog-api \
-| grep -v catalog-api-jobs
-```
-
-Set the CAT_API_POD environment variable to the name a pod returned by the preceding command:
-
-```
-export CAT_API_POD=<pod-name>
-```
-
-Check the catalog-api pod logs to determine the status of the consolidation
-
-Check for the following success message:
-
-```
-oc logs ${CAT_API_POD} \
--n ${PROJECT_CPD_INST_OPERANDS} \
-| grep "Initial consolidation with bss account 999 complete"
-```
-
-If the command returns a response the consolidation was successful, proceed to [What to do if the consolidation completed successfully](https://www.ibm.com/docs/en/software-hub/5.2.x?topic=services-completing-catalog-api-migration#catalog-api-migration__success)
-
-If the command returns an empty response, proceed to the next step
-
-Check for the following failure message:
-
-```
-oc logs ${CAT_API_POD} \
--n ${PROJECT_CPD_INST_OPERANDS} \
-| grep "Error running initial consolidation with resource key"
-```
-
-If the command returns a response the consolidation failed, try to consolidate the database again. If the problem persists, contact [IBM Support](https://www.ibm.com/mysupport/s/topic/0TO50000000IYkUGAW/cloud-pak-for-data?language=en_US)
-
-If the command returns an empty response, proceed to the next step
-
-Check for the following failure message:
-
-```
-oc logs ${CAT_API_POD} \
--n ${PROJECT_CPD_INST_OPERANDS} \
-| grep "Error executing initial consolidation for bss 999"
-```
-
-If the command returns a response the consolidation failed, try to consolidate the database again. If the problem persists, contact [IBM Support](https://www.ibm.com/mysupport/s/topic/0TO50000000IYkUGAW/cloud-pak-for-data?language=en_US)
-
-If the command returns an empty response, proceed to the next step
-
-If the preceding commands returned empty responses, wait 10 minutes before checking the pod logs again
-
-**Important: When carrying out the Completing the catalog-api service migration process, you may encounter [issues when consolidating the PostgreSQL database, Step 6](https://www.ibm.com/mysupport/s/defect/aCIgJ0000005J6r/dt450745?language=en_US). Please be aware that you may not receive all the information you need about the completion of the consolidation, and that you may not know if the process was completed successfully**
-
-7. What to do if the consolidation completed successfully
-
-If the PostgreSQL database consolidation was successful, wait several weeks to confirm that the projects, catalogs, and spaces in your environment are working as expected.
-
-After you confirm that the projects, catalogs, and spaces are working as expected, run the following commands to clean up the migration resources:
-
-Delete the pods associated with the migration:
-
-```
-oc delete pod \
--n ${PROJECT_CPD_INST_OPERANDS} \
--l app=cams-postgres-migration-app
-```
-
-Delete the jobs associated with the migration:
-
-```
-oc delete job \
--n ${PROJECT_CPD_INST_OPERANDS} \
--l app=cams-postgres-migration-app
-```
-
-Delete the config maps associated with the migration:
-
-```
-oc delete cm \
--n ${PROJECT_CPD_INST_OPERANDS} \
--l app=cams-postgres-migration-app
-```
-
-Delete the secrets associated with the migration:
-
-```
-oc delete secret \
--n ${PROJECT_CPD_INST_OPERANDS} \
--l app=cams-postgres-migration-app
-```
-
-Delete the persistent volume claim associated with the migration:
-
-```
-oc delete pvc cams-postgres-migration-pvc \
--n ${PROJECT_CPD_INST_OPERANDS}
-```
-
-**This marks the completion of the catalog-api service migration**
-
-## 9. Potential Issues To Be Aware Of
+## 8. Potential Issues To Be Aware Of
 
 1. If the Db2 license is not upgraded to the compatible version you may run into issues during Db2 instance upgrade. Follow the steps to "[Upgrade the license before you deploy Db2](https://www.ibm.com/docs/en/software-hub/5.2.x?topic=setup-upgrading-license-before-you-deploy-db2)"
 
@@ -2350,7 +1898,7 @@ oc delete pvc cams-postgres-migration-pvc \
 
 This marks the end of the upgrade of IBM Software Hub, Db2oltp, Datagate, and Db2 Data Management Console
 
-## 10. Validate CPD upgrade 
+## 9. Validate CPD upgrade 
 
 Perform final technical and functional checks
 
