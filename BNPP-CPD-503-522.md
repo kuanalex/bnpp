@@ -1695,13 +1695,14 @@ cpd-cli manage get-cr-status \
 --components=datagate
 ```
 
+
+### Upgrade the Data Gate service instances (est. 18 minutes):
+
 **Important: Potential issue during the upgrade of Data Gate service instances**
 
 During Data Gate instance upgrade a dg-1750101262664465-backup-head-job pod runs, but it should be scheduled to any node where Db2 is not running
 
 For this, you can cordon the node hosting Db2, and after the backup-head-job pod is completed, you can uncordon the same node
-
-### Upgrade the Data Gate service instances (est. 18 minutes):
 
 **Important: Potential issue after the upgrade of Data Gate service instances**
 
@@ -1758,6 +1759,7 @@ You can also [change configuration settings](https://www.ibm.com/docs/en/softwar
 
 Before you proceed, make sure the CPD profile is set up
 
+
 ### [Creating a profile to use the cpd-cli management commands](https://www.ibm.com/docs/en/software-hub/5.1.x?topic=cli-creating-cpd-profile)
 
 ```
@@ -1781,6 +1783,7 @@ Run the following command and see if the Provision status has changed to UPGRADE
 ```
 watch cpd-cli service-instance list --profile=${CPD_PROFILE_NAME} --service-type dg
 ```
+
 
 ### Post Data Gate Upgrade
 
@@ -1872,6 +1875,7 @@ DMC is upgraded when the apply-cr command returns:
 
 From the CP4D UI, re-enable Data Gate synchronization
 
+
 ### Uncomment the sync check
 
 On the GRAFANA server (primary and secondary)
@@ -1891,9 +1895,9 @@ The line to uncomment is
 
 1. If the Db2 license is not upgraded to the compatible version you may run into issues during Db2 instance upgrade. Follow the steps to "[Upgrade the license before you deploy Db2](https://www.ibm.com/docs/en/software-hub/5.2.x?topic=setup-upgrading-license-before-you-deploy-db2)"
 
-2. During the Db2 instance upgrade, the Db2ckupgrade.sh utility runs a job that must be scheduled to the same node as the Db2 engine pod. To prevent any issues, you can restrict the job to run on the same node as the engine pod. Use a cordon, to ensure that this job is scheduled to the node hosting Db2.
+2. During the Db2 instance upgrade, the Db2ckupgrade.sh utility runs a job that must be scheduled to the same node as the Db2 engine pod. To prevent any issues, you can restrict the job to run on the same node as the engine pod. Use a cordon, to ensure that this job is scheduled to the node hosting Db2
 
-3. During the Db2 instance upgrade you may observe issues related to Tempspace1, "Table space access is not allowed." This problem is related to the usage of local storage and results in missing files and missing folder structures within the Db2 pod. To address this, if Db2u pod has not restarted yet, you can run a workaround command or if Db2u pod has restarted already, you will need to create a specific directory structure inside the Db2u pod and copy the container tag to this location.
+3. During the Db2 instance upgrade you may observe issues related to Tempspace1, "Table space access is not allowed." This problem is related to the usage of local storage and results in missing files and missing folder structures within the Db2 pod. To address this, if Db2u pod has not restarted yet, you can run a workaround command or if Db2u pod has restarted already, you will need to create a specific directory structure inside the Db2u pod and copy the container tag to this location
 
 4. After Data Gate instances have been upgraded, it is possible that the configuration settings of the Db2 target database are not correctly migrated during the upgrade. Missing Db2 configuration settings can cause a variety of issues, in which the DB2COMM=TCPIP,SSL was missing. To resolve this, we had to add the missing Db2 setting by using 'db2set DB2COMM=TCPIP,SSL'. These configurations should persist through a Db2u pod recycle. Keep track of your Db2 configuration settings prior to upgrading to ensure you have a list of settings which you can restore. You can also [change configuration settings](https://www.ibm.com/docs/en/software-hub/5.2.x?topic=configuration-changing-db2-settings) after you deploy your instance
 
