@@ -1439,13 +1439,13 @@ cd /apps/cpdcli/cpd-cli-linux-SE-14.2.2-2727
 ```
 
 ```
-./cpd-cli config users set ${LOCAL_USER} --username ${CPD_USERNAME} --apikey ${API_KEY}
+cpd-cli config users set ${LOCAL_USER} --username ${CPD_USERNAME} --apikey ${API_KEY}
 ```
 
 Configure the profile
 
 ```
-./cpd-cli config profiles set ${CPD_PROFILE_NAME} \
+cpd-cli config profiles set ${CPD_PROFILE_NAME} \
 --user ${LOCAL_USER} \
 --url ${CPD_PROFILE_URL}
 ```
@@ -1453,7 +1453,7 @@ Configure the profile
 Confirm the profile is working
 
 ```
-./cpd-cli service-instance list --profile=${CPD_PROFILE_NAME}
+cpd-cli service-instance list --profile=${CPD_PROFILE_NAME}
 ```
 
 
