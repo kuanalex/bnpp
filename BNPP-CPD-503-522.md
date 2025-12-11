@@ -1445,7 +1445,7 @@ cd /apps/cpdcli/cpd-cli-linux-SE-14.2.2-2727
 Configure the profile
 
 ```
-cpd-cli config profiles set ${CPD_PROFILE_NAME} \
+./cpd-cli config profiles set ${CPD_PROFILE_NAME} \
 --user ${LOCAL_USER} \
 --url ${CPD_PROFILE_URL}
 ```
