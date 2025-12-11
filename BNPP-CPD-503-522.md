@@ -1666,7 +1666,7 @@ Run the following command
 rm -rf /head/clone-api/work/jetty-0_0_0_0-8188-clone-api_war-_clone_system-any-/webapp/* 2> /dev/null
 ```
 
-Exit the container shell and proceed with the upgrade
+Exit the container shell and proceed with the Data Gate custom resource upgrade
 
 
 ### Upgrade the custom resource for Data Gate
