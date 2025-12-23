@@ -7,7 +7,7 @@ From:
 ```
 CPD: 5.0.3
 OCP: 4.16.25
-Storage: FDF 2.9.1
+Storage: Storage Scale and Local Storage (for DB2)
 Internet: proxy
 Private container registry: yes
 Components: ibm-cert-manager,ibm-licensing,cpfs,cpd_platform,db2oltp,datagate,dmc
@@ -18,7 +18,7 @@ To:
 ```
 CPD: 5.2.2
 OCP: 4.16.25
-Storage: FDF 2.9.1
+Storage: Storage Scale and Local Storage (for DB2)
 Internet: proxy
 Private container registry: yes
 Components: ibm-cert-manager,ibm-licensing,cpfs,cpd_platform,db2oltp,datagate,dmc
