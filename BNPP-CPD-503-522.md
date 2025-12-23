@@ -1645,7 +1645,7 @@ l318711 -password 93421011 -checkexisting
 
 ### [Cleaning up the data-gate-api container](https://www.ibm.com/docs/en/software-hub/5.2.x?topic=upgrade-cleaning-up-data-gate-api)
 
-Remote into the dg Open a shell in the data-gate-api container of the Data Gate pod
+Open a shell in the data-gate-api container of the Data Gate pod
 
 ```
 oc get pod -n cp4data | grep data-gate
