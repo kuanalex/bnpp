@@ -6,7 +6,7 @@ From:
 
 ```
 CPD: 5.0.3
-OCP: 4.18.xx
+OCP: 4.16.25
 Storage: FDF 2.9.1
 Internet: proxy
 Private container registry: yes
@@ -17,7 +17,7 @@ To:
 
 ```
 CPD: 5.2.2
-OCP: 4.18.xx
+OCP: 4.16.25
 Storage: FDF 2.9.1
 Internet: proxy
 Private container registry: yes
