@@ -1841,7 +1841,7 @@ Run the utility to refresh dg certificates
 Find the Data Gate pod
 
 ```
-oc get po|grep data-gate
+oc get po | grep data-gate
 ```
 
 Remote into the Data Gate pod
