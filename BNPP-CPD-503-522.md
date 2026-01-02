@@ -527,7 +527,7 @@ If there is a problem, check the registries in /etc/containers/registries.conf
 ```
 cd /apps/cpdcli/cpd-cli-linux-SE-14.2.2-2727
 
-./cpd-cli manage restart-container
+cpd-cli manage restart-container
 
 podman ps
 ```
@@ -665,7 +665,7 @@ Log in to Openshift
 ```
 
 ```
-./cpd-cli manage login-to-ocp --user=${OCP_USERNAME} --password=${OCP_PASSWORD} --token=${OCP_TOKEN} -- server=${OCP_URL}
+cpd-cli manage login-to-ocp --user=${OCP_USERNAME} --password=${OCP_PASSWORD} --token=${OCP_TOKEN} -- server=${OCP_URL}
 ```
 
 If there are errors during login run the following commands
@@ -855,7 +855,7 @@ ${CPDM_OC_LOGIN}
 Upgrade shared cluster components
 
 ```
-./cpd-cli manage apply-cluster-components \
+cpd-cli manage apply-cluster-components \
 --release=${VERSION} \
 --license_acceptance=true \
 --cert_manager_ns=${PROJECT_CERT_MANAGER} \
@@ -1479,20 +1479,20 @@ export CPD_PROFILE_URL="https://cpd-cp4data.apps.oc001b000004.dev.echonet"
 Configure the user
 
 ```
-cd /apps/cpdcli/cpd-cli-linux-SE-14.2.2-2727 ./cpd-cli config users
-set ${LOCAL_USER} --username ${CPD_USERNAME} --apikey ${API_KEY}
+cd /apps/cpdcli/cpd-cli-linux-SE-14.2.2-2727
+cpd-cli config users set ${LOCAL_USER} --username ${CPD_USERNAME} --apikey ${API_KEY}
 ```
 
 Configure the profile
 
 ```
-./cpd-cli config profiles set ${CPD_PROFILE_NAME} --user ${LOCAL_USER} --url ${CPD_PROFILE_URL}
+cpd-cli config profiles set ${CPD_PROFILE_NAME} --user ${LOCAL_USER} --url ${CPD_PROFILE_URL}
 ```
 
 Confirm the profile is working
 
 ```
-./cpd-cli service-instance list --profile=${CPD_PROFILE_NAME}
+cpd-cli service-instance list --profile=${CPD_PROFILE_NAME}
 ```
 
 
