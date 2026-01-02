@@ -1741,12 +1741,6 @@ cpd-cli manage get-cr-status \
 
 ### Upgrade the Data Gate service instances (est. 18 minutes):
 
-**Important: Potential issue during the upgrade of Data Gate service instances**
-
-During Data Gate instance upgrade a dg-1750101262664465-backup-head-job pod runs, but it should be scheduled to any node where Db2 is not running
-
-For this, you can cordon the node hosting Db2, and after the backup-head-job pod is completed, you can uncordon the same node
-
 **Important: Potential issue after the upgrade of Data Gate service instances**
 
 After Data Gate instances have been upgraded, it is possible that the configuration settings of the Db2 target database are not correctly migrated during the upgrade
