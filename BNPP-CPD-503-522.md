@@ -1387,7 +1387,51 @@ Db2 is upgraded when the apply-cr command returns:
 
 ### Upgrade Db2 instances (est. 10 minutes)
 
-**Before you proceed, ensure your Db2 license is upgraded and CPD profile are set up**
+**Before you proceed, ensure you switch DB2 to Archive Logging mode, prepare ImageDigestMirrorSet, Db2 license is upgraded, and CPD profile are set up**
+
+### [Switch DB2 to Archive Logging mode](https://www.ibm.com/docs/en/software-hub/5.2.x?topic=gate-target-database-in-backup-pending-state)
+
+
+Remote into the db2u engine pod with db2inst1 user
+
+```
+oc exec -it ${DB2U_POD_NAME} -n ${PROJECT_CPD_INST_OPERANDS} su - db2inst1
+```
+
+Set dbConfig LOGARCHMETH1 value to OFF
+
+```
+db2 update db cfg for bludb using LOGARCHMETH1 OFF
+```
+
+
+### Prepare ImageDigestMirrorSet
+
+```
+cd /apps/bastion/install_files/config oc get ImageDigestMirrorSet
+```
+
+```
+oc get ImageDigestMirrorSet image-policy-3 -o yaml > image-digest-policy-4.yaml
+```
+
+```
+vi image-digest-policy-4.yaml
+```
+
+```
+apiVersion: config.openshift.io/v1 kind:
+ImageDigestMirrorSet metadata:
+name: image-policy-4 spec:
+imageDigestMirrors: -
+mirrors:
+db2u
+- icr.artifactory-dogen.group.echonet.net.intra/db2u source: icr.io/
+```
+
+```
+oc create -f image-digest-policy-4.yaml
+```
 
 
 ### [Upgrading the license before you deploy Db2](https://www.ibm.com/docs/en/SSNFH6_5.2.x/svc-db2/db2-update-lic.html)
