@@ -1709,7 +1709,19 @@ Run the following command
 rm -rf /head/clone-api/work/jetty-0_0_0_0-8188-clone-api_war-_clone_system-any-/webapp/* 2> /dev/null
 ```
 
-Exit the container shell and proceed with the Data Gate custom resource upgrade
+Exit the container shell and proceed with the next check
+
+Ensure that the datagate instance is not in an "InMaintenance" state, due to the parameter "ignoreForMaintenance":"true"
+
+```
+oc get datagateinstanceservice -n cp4data
+```
+
+If the datagate instance status is "InMaintenance" apply this patch
+
+```
+oc patch datagateinstanceservices $(oc get datagateinstanceservice -n cp4data | tail -n 1 | cut -d ' cp4data --patch '{"spec":{"ignoreForMaintenance":"false"}}' --type=merge ' -f1) -n
+```
 
 
 ### Upgrade the custom resource for Data Gate
@@ -1822,7 +1834,7 @@ watch cpd-cli service-instance list --profile=${CPD_PROFILE_NAME} --service-type
 ```
 
 
-### Post Data Gate Upgrade
+### Post Data Gate Instance Upgrade
 
 Run the utility to refresh dg certificates
 
