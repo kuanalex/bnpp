@@ -1813,8 +1813,9 @@ You can also [change configuration settings](https://www.ibm.com/docs/en/softwar
 
 Before you proceed, make sure the CPD profile is set up
 
-
 ### [Creating a profile to use the cpd-cli management commands](https://www.ibm.com/docs/en/software-hub/5.1.x?topic=cli-creating-cpd-profile)
+
+Proceed with Upgrading Datagate Instances
 
 ```
 cpd-cli service-instance upgrade \
