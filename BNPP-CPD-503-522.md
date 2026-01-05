@@ -1326,7 +1326,7 @@ Proceed with upgrading the services next
 In order to have more visibility into each service upgrade, it is recommended to upgrade the services in sequential order, as follows:
 
 
-### Upgrade Db2 custom resource (est. 10 minutes)
+### Upgrade Db2 custom resource (est. 15 minutes)
 
 **Important: Before you proceed, make sure Data Gate synchronization has been stopped**
 
@@ -1724,7 +1724,7 @@ oc patch datagateinstanceservices $(oc get datagateinstanceservice -n cp4data | 
 ```
 
 
-### Upgrade the custom resource for Data Gate
+### Upgrade the custom resource for Data Gate (est. 5 minutes):
 
 ```
 cpd-cli manage apply-cr \
@@ -1878,7 +1878,7 @@ If a pod remains in the creating state, there is a problem, follow the procedure
 21.14.1.0 CP4D Troubleshooting update problems - MDP - MD15B - Confluence (group.echonet)
 
 
-### Upgrade the Db2 Data Management Console custom resource (est. 10 minutes):
+### Upgrade the Db2 Data Management Console custom resource (est. 5 minutes):
 
 Log the cpd-cli in to the Red Hat® OpenShift® Container Platform cluster:
 
