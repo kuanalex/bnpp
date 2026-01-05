@@ -1191,6 +1191,10 @@ cpd-cli manage setup-instance \
 Monitor the upgrade progress of the custom resources with the following commands:
 
 ```
+watch -n 5 'oc get pods -A -o wide | grep -Ev "([0-9]+)/\1|Completed"; echo; oc get ZenService -n cp4data -o yaml | grep "progress"'
+```
+
+```
 oc get ZenService lite-cr -n cp4data -o yaml
 ```
 
@@ -1375,6 +1379,10 @@ cpd-cli manage get-cr-status \
 You can also monitor the status of the Db2 upgrade with the following command:
 
 ```
+watch -n 5 'oc get pods -A -o wide | grep -Ev "([0-9]+)/\1|Completed"; echo; oc get Db2oltpService -n cp4data -o yaml | grep "progress"'
+```
+
+```
 oc get db2oltpservice.databases.cpd.ibm.com -n cp4data -o yaml
 ```
 
@@ -1536,7 +1544,7 @@ cpd-cli service-instance list \
 --service-type=db2oltp
 ```
 
-**Potential issue during the upgrade of Db2 service instance related to Tempspace1**
+**Potential issue during the upgrade of Db2 service instance related to TEMPSPACE1**
 
 During the Db2 instance upgrade you may observe any issue with Tempspace1, "Table space access is not allowed." 
 
@@ -1747,6 +1755,12 @@ Validating the upgrade: Data Gate is upgraded when the apply-cr command returns:
 
 [SUCCESS]... The apply-cr command ran successfully
 
+Monitor the progress of Datagate custom resource upgrade with the following command:
+
+```
+watch -n 5 'oc get pods -A -o wide | grep -Ev "([0-9]+)/\1|Completed"; echo; oc get DatagateService -n cp4data -o yaml | grep "progress"'
+```
+
 If you want to confirm that the custom resource status is Completed, you can run the cpd-cli manage get-cr-status command:
 
 ```
@@ -1867,6 +1881,7 @@ Exit the session
 ```
 exit
 ```
+
 Restart the Data Gate pod
 
 **Important: Potential issue -> If the Data Gate pod is stuck at 4/5, there is a problem, follow the proedure**
@@ -1877,6 +1892,7 @@ Open a shell in the datagate-api container and run the following commands
 rm -rf /head/clone-api/work/jetty-0_0_0_0-8188-clone-api_war-_clone_system-any-/webapp/*
 touch /head/.UPGRADE_INSTANCE
 ```
+
 Restart the Data Gate pod
 
 If a pod remains in the creating state, there is a problem, follow the procedure 
@@ -1905,18 +1921,22 @@ cpd-cli manage apply-cr \
 --case_download=false
 ```
 
+You can monitor the progress of the Dmc upgrade with the following commands:
+
+```
+watch -n 5 'oc get pods -A -o wide | grep -Ev "([0-9]+)/\1|Completed"; echo; oc get Dmcaddon -n cp4data -o yaml | grep "progress"'
+```
+
+```
+oc get Dmcaddon dmc-addon -n cp4data -o yaml
+```
+
 If you want to confirm that the custom resource status is Completed, you can run the cpd-cli manage get-cr-status command:
 
 ```
 cpd-cli manage get-cr-status \
 --cpd_instance_ns=${PROJECT_CPD_INST_OPERANDS} \
 --components=dmc
-```
-
-You can also monitor the status of the Dmc upgrade with the following command:
-
-```
-oc get Dmcaddon dmc-addon -n cp4data -o yaml
 ```
 
 DMC is upgraded when the apply-cr command returns:
@@ -1928,7 +1948,7 @@ DMC is upgraded when the apply-cr command returns:
 
 ### Restart Data Gate synchronization
 
-From the CP4D UI, re-enable Data Gate synchronization
+**From the CP4D UI, re-enable Data Gate synchronization**
 
 
 ### Uncomment the sync check
