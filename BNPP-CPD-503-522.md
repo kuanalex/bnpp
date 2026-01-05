@@ -1625,6 +1625,11 @@ cpd-cli service-instance status ${INSTANCE_NAME} \
 Continue with the upgrade of Data Gate custom resource
 
 
+### Modify the value DB2_BEDROCK_ROUTE
+
+Follow procedure 21.6.17 User CPD cannot connect to db2 - MDP - MD15B - Confluence Permanent solution
+
+
 ### Upgrade the Data Gate custom resource (est. 10 minutes):
 
 Complete the following tasks before you run the actual Data Gate upgrade
